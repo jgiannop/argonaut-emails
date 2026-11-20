@@ -102,3 +102,6 @@ private:
     QString m_connection;
     QString m_error;
 };
+
+// Carried in item data (the tray's popup).
+Q_DECLARE_METATYPE(MailStore::Summary)

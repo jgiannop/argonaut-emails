@@ -33,6 +33,13 @@ Version 0.1.0: the first working version.
 - **Delete** moves a message to the account's Trash.
 - **Themes**: Argonaut's themes, including theme files from
   `~/.local/share/argonaut/themes`.
+- **In the tray**, as Viber: closing the window leaves the program in the
+  system tray, still checking for mail (View → Keep Running in the Tray;
+  File → Quit ends it). The icon shows the number of unread messages, as a
+  phone's mail does, and so does the dock's icon. A click on it opens a
+  popup of your newest messages, ten more each time you scroll to its end;
+  a click on one opens it. For Gmail the number and the popup are those of
+  Primary.
 - **Command palette** (Ctrl+Shift+P), as in Argonaut: type a few letters of
   any command and press Enter.
 - **Extensions**, as in Argonaut: small programs that add commands (Edit →

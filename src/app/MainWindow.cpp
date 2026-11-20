@@ -9,8 +9,10 @@
 #include "FolderTree.h"
 #include "MessageList.h"
 #include "MessageView.h"
+#include "RecentPopup.h"
 #include "StyleSheet.h"
 #include "Sync.h"
+#include "TrayIcon.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -24,7 +26,9 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QSystemTrayIcon>
 #include <QTabBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -144,6 +148,7 @@ MainWindow::MainWindow(MailStore *store, QWidget *parent)
     startAccounts();
     updateActions();
     connectExtensions();
+    buildTray();
 }
 
 MainWindow::~MainWindow() = default;
@@ -180,7 +185,7 @@ void MainWindow::buildActions()
     m_removeAccountAct = make(tr("Remove Account…"), QKeySequence(), &MainWindow::removeAccount);
     m_quitAct = new QAction(tr("Quit"), this);
     m_quitAct->setShortcut(QKeySequence::Quit);
-    connect(m_quitAct, &QAction::triggered, this, &QWidget::close);
+    connect(m_quitAct, &QAction::triggered, this, &MainWindow::quit);
     addAction(m_quitAct);
     m_paletteAct = new QAction(tr("Command Palette…"), this);
     m_paletteAct->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P));
@@ -240,6 +245,12 @@ void MainWindow::buildMenus()
     view->addSeparator();
     m_themeMenu = view->addMenu(tr("Theme"));
     connect(m_themeMenu, &QMenu::aboutToShow, this, &MainWindow::fillThemeMenu);
+    view->addSeparator();
+    m_trayAct = view->addAction(tr("Keep Running in the Tray"));
+    m_trayAct->setCheckable(true);
+    m_trayAct->setChecked(QSettings().value(QStringLiteral("window/keepInTray"), true).toBool());
+    m_trayAct->setToolTip(tr("Closing the window leaves Argonaut Emails in the system tray, checking for mail"));
+    connect(m_trayAct, &QAction::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("window/keepInTray"), on); });
     view->addSeparator();
     view->addAction(m_paletteAct);
 
@@ -326,6 +337,79 @@ void MainWindow::showCommandPalette()
             walk(menu, clean(menu->title()));
     }
     m_palette->open(commands);
+}
+
+bool MainWindow::keepsRunningInTray() const
+{
+    return m_tray && m_tray->icon()->isVisible() && m_trayAct && m_trayAct->isChecked();
+}
+
+void MainWindow::buildTray()
+{
+    auto *menu = new QMenu(this);
+    menu->addAction(tr("Open Argonaut Emails"), this, &MainWindow::showFromTray);
+    menu->addAction(m_writeAct);
+    menu->addAction(m_getAct);
+    menu->addSeparator();
+    menu->addAction(m_quitAct);
+    m_tray = new TrayIcon(menu, this);
+    m_recent = new RecentPopup(m_store, this);
+    connect(m_tray, &TrayIcon::clicked, this, [this](const QRect &where) {
+        if (m_recent->isVisible())
+            m_recent->hide();
+        else
+            m_recent->popup(where);
+    });
+    connect(m_tray, &TrayIcon::openRequested, this, &MainWindow::showFromTray);
+    connect(m_recent, &RecentPopup::openRequested, this, &MainWindow::showFromTray);
+    connect(m_recent, &RecentPopup::messageChosen, this, &MainWindow::openFromTray);
+    // The number follows the store (a little later: a sync changes many things at once).
+    auto *later = new QTimer(this);
+    later->setSingleShot(true);
+    later->setInterval(300);
+    connect(later, &QTimer::timeout, this, [this] {
+        updateUnread();
+        m_recent->reload();
+    });
+    connect(m_store, &MailStore::folderChanged, later, qOverload<>(&QTimer::start));
+    connect(m_store, &MailStore::foldersChanged, later, qOverload<>(&QTimer::start));
+    updateUnread();
+}
+
+void MainWindow::updateUnread()
+{
+    if (m_tray)
+        m_tray->setUnread(RecentPopup::unread(m_store));
+}
+
+void MainWindow::showFromTray()
+{
+    QApplication::setQuitOnLastWindowClosed(true);
+    if (isMinimized())
+        showNormal();
+    else
+        show();
+    raise();
+    activateWindow();
+}
+
+void MainWindow::openFromTray(const MailStore::Summary &summary)
+{
+    showFromTray();
+    m_folders->select(summary.account, summary.folder);
+    if (m_list->messages()->account() != summary.account || m_list->messages()->folder() != summary.folder)
+        showFolder(summary.account, summary.folder);
+    m_list->selectUid(summary.uid);
+    m_list->setFocus();
+}
+
+void MainWindow::quit()
+{
+    m_quitting = true;
+    if (close())
+        QApplication::quit(); // the compose windows too
+    else
+        m_quitting = false;
 }
 
 void MainWindow::buildToolBar()
@@ -630,6 +714,10 @@ void MainWindow::applyTheme()
         return;
     m_themeId = theme.id;
     setStyleSheet(styleSheetFor(theme));
+    if (m_recent) {
+        m_recent->setStyleSheet(styleSheetFor(theme)); // a window of its own
+        m_recent->applyTheme(theme);
+    }
     m_folders->applyTheme(theme);
     m_view->applyTheme(theme);
     m_getAct->setIcon(glyphIcon(Glyph::Recent, theme.fg));
@@ -714,6 +802,20 @@ void MainWindow::saveSettings()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (keepsRunningInTray() && !m_quitting) {
+        // As Viber: the window goes, the program stays in the tray and keeps checking for mail.
+        saveSettings();
+        QApplication::setQuitOnLastWindowClosed(false); // a compose window closed now doesn't end it
+        hide();
+        event->ignore();
+        QSettings settings;
+        if (!settings.value(QStringLiteral("window/toldAboutTray")).toBool()) {
+            settings.setValue(QStringLiteral("window/toldAboutTray"), true);
+            m_tray->showMessage(tr("Argonaut Emails is still running"),
+                                tr("It keeps checking for mail in the tray. File → Quit ends it; View → Keep Running in the Tray changes this."));
+        }
+        return;
+    }
     saveSettings();
     QMainWindow::closeEvent(event);
 }

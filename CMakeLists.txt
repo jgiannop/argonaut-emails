@@ -55,8 +55,10 @@ qt_add_library(mail_app STATIC
     src/app/MainWindowExtensions.cpp
     src/app/MessageList.cpp src/app/MessageList.h
     src/app/MessageView.cpp src/app/MessageView.h
+    src/app/RecentPopup.cpp src/app/RecentPopup.h
     src/app/StyleSheet.cpp src/app/StyleSheet.h
     src/app/Theme.cpp src/app/Theme.h
+    src/app/TrayIcon.cpp src/app/TrayIcon.h
 )
 target_include_directories(mail_app PUBLIC src/app)
 # Messages are shown by Chromium (Qt WebEngine), locked: see MailWebView.h.

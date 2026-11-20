@@ -41,6 +41,10 @@ QScrollBar:vertical { background: transparent; width: 10px; }
 QScrollBar::handle:vertical { background: @scroll; border-radius: 4px; min-height: 30px; margin: 2px; }
 QScrollBar::handle:vertical:hover { background: @scrollHover; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QFrame#recentPopup { background: @popup; border: 1px solid @border; }
+QListWidget#recentList { background: transparent; color: @dimFg; outline: 0; }
+QLabel#recentTitle { color: @fg; font-weight: bold; font-size: 15px; }
+QLabel#recentCount { color: @accent; font-weight: bold; }
 QFrame#commandPalette { background: @popup; border: 1px solid @border; border-radius: 12px; }
 QLineEdit#paletteEdit { background: @pathBg; color: @fg; border: none; border-radius: 8px;
     padding: 8px 10px; font-size: 14px; selection-background-color: @accent; }

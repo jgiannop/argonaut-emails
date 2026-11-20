@@ -9,8 +9,10 @@
 #include "MessageList.h"
 #include "MessageView.h"
 #include "Passwords.h"
+#include "RecentPopup.h"
 #include "Sync.h"
 #include "TestSupport.h"
+#include "TrayIcon.h"
 
 #include <QApplication>
 #include <QDir>
@@ -18,6 +20,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QScrollBar>
+#include <QSystemTrayIcon>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSplitter>
@@ -231,6 +235,72 @@ private slots:
                 a->trigger();
         }
         again.close();
+    }
+
+    // In the tray, as Viber: the number of unread messages on the icon, and a
+    // popup of the newest messages, ten more each time it is scrolled to its end.
+    void trayPopupAndBadge()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        FakeImap imap;
+        for (int i = 1; i <= 25; ++i) {
+            imap.add("INBOX",
+                     "From: Sender " + QByteArray::number(i) + " <s" + QByteArray::number(i) + "@example.org>\r\nSubject: Note "
+                         + QByteArray::number(i) + "\r\nDate: Tue, 1 Jul 2025 10:" + QByteArray::number(10 + i)
+                         + ":00 +0200\r\n\r\nText " + QByteArray::number(i) + "\r\n",
+                     i == 25 || i == 24 || i == 3 ? QStringList() : QStringList{QStringLiteral("\\Seen")});
+        }
+        Account a;
+        a.email = QStringLiteral("maria@example.com");
+        a.imapHost = QStringLiteral("127.0.0.1");
+        a.imapPort = imap.port();
+        a.imapSecurity = ImapClient::Security::None;
+        a.smtpHost = QStringLiteral("127.0.0.1");
+        Account::save(a);
+        QVERIFY(Passwords::save(a.id, QStringLiteral("imap"), imap.password, a.email));
+        MailStore store(QDir::homePath() + QStringLiteral("/tray.sqlite"));
+        MainWindow window(&store);
+        window.resize(1200, 800);
+        window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.syncFor(a.id)->isBusy() && store.messages(a.id, "INBOX").size() == 25, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(window.tray()->unread(), 3, 5000);
+        QVERIFY(window.tray()->icon()->toolTip().contains(QStringLiteral("3 unread")));
+        // The badge: Gmail's red at the top right corner, none without unread mail.
+        const QImage badged = TrayIcon::badged(3).pixmap(48, 48).toImage();
+        QCOMPARE(QColor(badged.pixel(badged.width() - 4, 10)), QColor(0xd9, 0x30, 0x25));
+        QVERIFY(TrayIcon::badged(0).pixmap(48, 48).toImage() != badged);
+
+        RecentPopup *popup = window.recent();
+        popup->popup(QRect(600, 0, 24, 24));
+        QVERIFY(popup->isVisible());
+        QCOMPARE(popup->shownCount(), 10);
+        if (qEnvironmentVariableIsSet("MAIL_TEST_GRAB_TRAY")) {
+            QTest::qWait(100);
+            popup->grab().save(qEnvironmentVariable("MAIL_TEST_GRAB_TRAY"));
+            TrayIcon::badged(3).pixmap(64, 64).save(qEnvironmentVariable("MAIL_TEST_GRAB_TRAY") + QStringLiteral(".badge.png"));
+        }
+        auto subjectAt = [popup](int row) {
+            return popup->list()->item(row)->data(Qt::UserRole + 1).value<MailStore::Summary>().subject;
+        };
+        QCOMPARE(subjectAt(0), QStringLiteral("Note 25")); // the newest first
+        QCOMPARE(subjectAt(9), QStringLiteral("Note 16"));
+        QScrollBar *bar = popup->list()->verticalScrollBar();
+        bar->setValue(bar->maximum());
+        QCOMPARE(popup->shownCount(), 20);
+        bar->setValue(bar->maximum());
+        QCOMPARE(popup->shownCount(), 25);
+        bar->setValue(bar->maximum());
+        QCOMPARE(popup->shownCount(), 25); // all there is
+
+        // A click: the window, at that message; reading it lowers the number.
+        QListWidget *list = popup->list();
+        list->scrollToTop();
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, {}, list->visualItemRect(list->item(1)).center());
+        QVERIFY(!popup->isVisible());
+        QCOMPARE(window.list()->current().subject, QStringLiteral("Note 24"));
+        QTRY_VERIFY_WITH_TIMEOUT(window.view()->shownText().contains(QStringLiteral("Text 24")), 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(window.tray()->unread(), 2, 5000);
     }
 
     // Ctrl+Shift+P: every menu command, an extension's too, found by a few letters.

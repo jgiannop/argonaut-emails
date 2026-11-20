@@ -19,7 +19,9 @@ class QLineEdit;
 class QMenu;
 class QSplitter;
 class QTabBar;
+class RecentPopup;
 class Sync;
+class TrayIcon;
 
 // The three panes, as in Thunderbird: accounts and folders at the left,
 // the folder's messages at the top right, the message under them.
@@ -46,6 +48,13 @@ public:
     // Ctrl+Shift+P: every menu command, extensions' too (Argonaut's palette).
     void showCommandPalette();
     CommandPalette *palette() const { return m_palette; }
+    TrayIcon *tray() const { return m_tray; }
+    RecentPopup *recent() const { return m_recent; }
+    // Opens a message from the tray's popup: the window comes back, at it.
+    void openFromTray(const MailStore::Summary &summary);
+    void showFromTray();
+    // File → Quit: really, even with the tray (closing the window only hides it then).
+    void quit();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -77,6 +86,9 @@ private:
     void loadSettings();
     void saveSettings();
     void fillThemeMenu();
+    void buildTray();
+    void updateUnread(); // the tray's and the dock's number
+    bool keepsRunningInTray() const;
     // Extensions (MainWindowExtensions.cpp): their commands in the menus,
     // their results in the message pane, their forms over the window.
     void connectExtensions();
@@ -125,4 +137,8 @@ private:
     QMenu *m_themeMenu = nullptr;
     QHash<QString, QMenu *> m_extensionMenus; // "file", "edit", "view", "message"
     CommandPalette *m_palette = nullptr;
+    TrayIcon *m_tray = nullptr;
+    RecentPopup *m_recent = nullptr;
+    QAction *m_trayAct = nullptr; // View → Keep Running in the Tray
+    bool m_quitting = false;
 };
