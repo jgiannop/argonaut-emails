@@ -1,5 +1,7 @@
 #include "Account.h"
+#include "CommandPalette.h"
 #include "ComposeWindow.h"
+#include "Extensions.h"
 #include "FakeServers.h"
 #include "FolderTree.h"
 #include "MailWebView.h"
@@ -13,7 +15,9 @@
 #include <QApplication>
 #include <QDir>
 #include <QHeaderView>
+#include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSplitter>
@@ -227,6 +231,75 @@ private slots:
                 a->trigger();
         }
         again.close();
+    }
+
+    // Ctrl+Shift+P: every menu command, an extension's too, found by a few letters.
+    void commandPalette()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        qputenv("MAIL_EXTENSIONS_PATH", MAIL_BUILT_EXTENSIONS);
+        Extensions::Host::instance()->rescan();
+        Extensions::Host::instance()->setEnabled(QStringLiteral("last-week"), true);
+        MailStore store(QDir::homePath() + QStringLiteral("/palette.sqlite"));
+        MainWindow window(&store);
+        window.resize(1200, 800);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.showCommandPalette();
+        CommandPalette *palette = window.palette();
+        QVERIFY(palette && palette->isVisible());
+        QHash<QString, QString> where;
+        for (const CommandPalette::Command &c : palette->commands())
+            where.insert(c.name, c.where);
+        QCOMPARE(where.value(QStringLiteral("Write")), QStringLiteral("File"));
+        QCOMPARE(where.value(QStringLiteral("Extensions")), QStringLiteral("Edit"));
+        QCOMPARE(where.value(QStringLiteral("Beside the List")), QStringLiteral("View › Message Pane"));
+        QCOMPARE(where.value(QStringLiteral("ext::Summarize Last Week with Claude")), QStringLiteral("File · Last Week with Claude"));
+        QVERIFY(!where.contains(QStringLiteral("Command Palette")));
+
+        auto *edit = palette->findChild<QLineEdit *>(QStringLiteral("paletteEdit"));
+        auto *list = palette->findChild<QListWidget *>(QStringLiteral("paletteList"));
+        QTest::keyClicks(edit, QStringLiteral("besid"));
+        QCOMPARE(list->currentItem()->text(), QStringLiteral("Beside the List"));
+        QTest::keyClick(edit, Qt::Key_Return);
+        QVERIFY(!palette->isVisible());
+        QTRY_VERIFY(window.besideAction()->isChecked());
+        window.showCommandPalette();
+        QTest::keyClick(palette->findChild<QLineEdit *>(QStringLiteral("paletteEdit")), Qt::Key_Escape);
+        QVERIFY(!palette->isVisible());
+        for (QAction *a : window.findChildren<QAction *>()) {
+            if (a->text() == QStringLiteral("Below the List"))
+                a->trigger();
+        }
+        Extensions::Host::instance()->setEnabled(QStringLiteral("last-week"), false);
+        qunsetenv("MAIL_EXTENSIONS_PATH");
+    }
+
+    // An extension's report: in the message pane, as Markdown made safe.
+    void extensionResult()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        MailStore store(QDir::homePath() + QStringLiteral("/result.sqlite"));
+        MainWindow window(&store);
+        window.resize(1200, 800);
+        window.show();
+        Extensions::Result result;
+        result.kind = Extensions::Result::Markdown;
+        result.extension = QStringLiteral("last-week");
+        result.title = QStringLiteral("Last week in your mail");
+        result.text = QStringLiteral("# Your week\n\n**Eleni** – invoice 42\n\n<script>document.title='ran'</script>");
+        result.note = QStringLiteral("By Claude Opus 5.5 from 3 messages");
+        emit Extensions::Host::instance()->showRequested(result);
+        QVERIFY(window.view()->hasResult());
+        QTRY_VERIFY_WITH_TIMEOUT(window.view()->shownText().contains(QStringLiteral("Eleni – invoice 42")), 10000);
+        QVERIFY(!window.view()->shownText().contains(QStringLiteral("document.title")));
+        QStringList labels;
+        for (QLabel *l : window.view()->findChildren<QLabel *>())
+            labels << l->text();
+        QVERIFY(labels.contains(QStringLiteral("Last week in your mail")));
+        QVERIFY(labels.contains(QStringLiteral("By Claude Opus 5.5 from 3 messages")));
     }
 
     void themeChangesAtOnce()

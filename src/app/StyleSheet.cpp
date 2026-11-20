@@ -41,6 +41,31 @@ QScrollBar:vertical { background: transparent; width: 10px; }
 QScrollBar::handle:vertical { background: @scroll; border-radius: 4px; min-height: 30px; margin: 2px; }
 QScrollBar::handle:vertical:hover { background: @scrollHover; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QFrame#commandPalette { background: @popup; border: 1px solid @border; border-radius: 12px; }
+QLineEdit#paletteEdit { background: @pathBg; color: @fg; border: none; border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; selection-background-color: @accent; }
+QListWidget#paletteList { background: transparent; color: @fg; outline: 0; }
+QDialog#extensionsDialog, QDialog#claudeDialog, QDialog#connectDialog { background: @window; }
+QFrame#extCard { background: @pathBg; border-radius: 10px; }
+QFrame#extCard QLabel#prefHint { background: transparent; }
+QLabel#extName { color: @fg; font-weight: bold; background: transparent; }
+QLabel#extState { color: @dimFg; background: transparent; }
+QLabel#extState[look="good"] { color: @accent; }
+QLabel#extState[look="bad"] { color: #e01b24; }
+QScrollArea#prefScroll, QWidget#prefContent { background: @window; }
+QLabel#prefHeading { color: @fg; font-weight: bold; font-size: 15px; }
+QLabel#prefSubheading { color: @fg; font-weight: bold; }
+QLabel#prefHint { color: @dimFg; }
+QLabel#propDanger { color: #e01b24; }
+QCheckBox#prefCheck { color: @fg; spacing: 8px; }
+QCheckBox#prefCheck::indicator { width: 14px; height: 14px; border: 1px solid @dimFg;
+    border-radius: 4px; background: @pathBg; }
+QCheckBox#prefCheck::indicator:checked { background: @accent; border-color: @accent; }
+QLineEdit#connectAddress, QLineEdit#claudeKey { background: @pathBg; color: @fg; border: none; border-radius: 6px;
+    padding: 7px 9px; selection-background-color: @accent; }
+QPushButton#prefButton { background: @pathBg; color: @fg; border: none; border-radius: 6px; padding: 7px 16px; }
+QPushButton#prefButton:hover { background: @hover; }
+QPushButton#prefButton:disabled { color: @dimFg; }
 )");
     const QList<QPair<QString, QColor>> tokens{
         {QStringLiteral("@window"), t.window},   {QStringLiteral("@sidebar"), t.sidebar},

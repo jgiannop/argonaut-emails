@@ -475,6 +475,70 @@ void Sync::fetchBody(const QByteArray &path, qint64 uid, BodyDone done)
     enqueue(op);
 }
 
+void Sync::fetchBodies(const QByteArray &path, const QList<qint64> &uids, std::function<void(const QString &error)> done)
+{
+    auto left = std::make_shared<QList<qint64>>();
+    for (qint64 uid : uids) {
+        if (m_store->body(m_account.id, path, uid).isEmpty())
+            left->append(uid);
+    }
+    if (left->isEmpty()) {
+        done(QString());
+        return;
+    }
+    Op op;
+    op.what = tr("Reading %n message(s)", nullptr, int(left->size()));
+    op.urgent = true; // the user chose something that waits for them
+    op.failed = done;
+    op.run = [this, path, left, done](std::function<void()> next) {
+        auto fetch = [this, path, left, done, next] { fetchBatch(path, left, done, next); };
+        if (m_selected == path) {
+            fetch();
+            return;
+        }
+        select(path, [done, fetch, next](bool ok, const ImapClient::Result &r) {
+            if (!ok) {
+                done(r.text);
+                next();
+                return;
+            }
+            fetch();
+        });
+    };
+    enqueue(op);
+}
+
+// 20 at a time: one answer stays a sensible size.
+void Sync::fetchBatch(const QByteArray &path, std::shared_ptr<QList<qint64>> left, std::function<void(const QString &error)> done,
+                      std::function<void()> next)
+{
+    if (left->isEmpty()) {
+        done(QString());
+        next();
+        return;
+    }
+    QByteArray set;
+    const QList<qint64> batch = left->mid(0, 20);
+    left->remove(0, batch.size());
+    for (qint64 uid : batch)
+        set += (set.isEmpty() ? QByteArray() : QByteArray(",")) + QByteArray::number(uid);
+    m_client.command("UID FETCH " + set + " (UID BODY.PEEK[])", [this, path, left, done, next](const ImapClient::Result &r) {
+        if (!r.ok) {
+            done(r.text);
+            next();
+            return;
+        }
+        for (const Imap::Response &u : r.untagged) {
+            const Imap::Value *list = fetchList(u);
+            const Imap::Value *id = list ? Imap::fetchItem(*list, "UID") : nullptr;
+            const Imap::Value *body = list ? itemStartingWith(*list, "BODY[") : nullptr;
+            if (id && body && !body->text.isEmpty())
+                m_store->setBody(m_account.id, path, id->text.toLongLong(), body->text);
+        }
+        fetchBatch(path, left, done, next);
+    });
+}
+
 void Sync::storeFlag(const QByteArray &path, qint64 uid, const QByteArray &flag, bool on)
 {
     Op op;

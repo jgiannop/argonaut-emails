@@ -2,8 +2,10 @@
 
 #include "Account.h"
 #include "AccountDialog.h"
+#include "CommandPalette.h"
 #include "ComposeWindow.h"
 #include "Composer.h"
+#include "ExtensionMenu.h"
 #include "FolderTree.h"
 #include "MessageList.h"
 #include "MessageView.h"
@@ -108,6 +110,31 @@ MainWindow::MainWindow(MailStore *store, QWidget *parent)
         menu.addAction(m_removeAccountAct);
         menu.exec(m_folders->viewport()->mapToGlobal(pos));
     });
+    // Right-click on a message: what can be done with it, extensions' commands too.
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_list, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        if (m_list->current().uid == 0)
+            return;
+        QMenu menu(this);
+        for (QAction *a : {m_replyAct, m_replyAllAct, m_forwardAct})
+            menu.addAction(a);
+        menu.addSeparator();
+        for (QAction *a : {m_readAct, m_starAct, m_deleteAct})
+            menu.addAction(a);
+        QMenu more;
+        if (ExtensionMenu::add(&more, this, extensionSelection()) > 0) {
+            menu.addSeparator();
+            const QList<QAction *> actions = more.actions();
+            for (QAction *a : actions) {
+                more.removeAction(a);
+                a->setParent(&menu);
+                if (QMenu *sub = a->menu())
+                    sub->setParent(&menu, sub->windowFlags());
+                menu.addAction(a);
+            }
+        }
+        menu.exec(m_list->viewport()->mapToGlobal(pos));
+    });
     connect(m_list, &MessageList::messageChosen, this, &MainWindow::showMessage);
     connect(m_list->messages(), &QAbstractItemModel::modelReset, this, &MainWindow::updateActions);
 
@@ -116,6 +143,7 @@ MainWindow::MainWindow(MailStore *store, QWidget *parent)
     m_folders->reload();
     startAccounts();
     updateActions();
+    connectExtensions();
 }
 
 MainWindow::~MainWindow() = default;
@@ -154,6 +182,13 @@ void MainWindow::buildActions()
     m_quitAct->setShortcut(QKeySequence::Quit);
     connect(m_quitAct, &QAction::triggered, this, &QWidget::close);
     addAction(m_quitAct);
+    m_paletteAct = new QAction(tr("Command Palette…"), this);
+    m_paletteAct->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P));
+    connect(m_paletteAct, &QAction::triggered, this, &MainWindow::showCommandPalette);
+    addAction(m_paletteAct);
+    m_extensionsAct = make(tr("Extensions…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_X), &MainWindow::showExtensions);
+    m_claudeAct = make(tr("Claude…"), QKeySequence(), &MainWindow::showClaudeSettings);
+    m_reportsAct = make(tr("Claude Reports"), QKeySequence(), &MainWindow::openClaudeReports);
     m_searchAct = new QAction(tr("Search"), this);
     m_searchAct->setShortcut(QKeySequence::Find);
     connect(m_searchAct, &QAction::triggered, this, [this] {
@@ -179,11 +214,16 @@ void MainWindow::buildMenus()
     file->addAction(m_editAccountAct);
     file->addAction(m_removeAccountAct);
     file->addSeparator();
+    file->addAction(m_reportsAct);
+    file->addSeparator();
     file->addAction(m_quitAct);
 
     QMenu *edit = menuBar()->addMenu(tr("&Edit"));
     edit->addAction(m_searchAct);
     edit->addAction(m_deleteAct);
+    edit->addSeparator();
+    edit->addAction(m_extensionsAct);
+    edit->addAction(m_claudeAct);
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     QMenu *pane = view->addMenu(tr("Message Pane"));
@@ -198,19 +238,10 @@ void MainWindow::buildMenus()
     connect(m_belowAct, &QAction::triggered, this, [this] { setMessageBeside(false); });
     connect(m_besideAct, &QAction::triggered, this, [this] { setMessageBeside(true); });
     view->addSeparator();
-    QMenu *themes = view->addMenu(tr("Theme"));
-    connect(themes, &QMenu::aboutToShow, this, [this, themes] {
-        themes->clear();
-        auto *group = new QActionGroup(themes);
-        const QString current = savedThemeKey();
-        for (const ThemeChoice &choice : allThemes()) {
-            QAction *a = themes->addAction(choice.name);
-            a->setCheckable(true);
-            a->setChecked(choice.key == current);
-            group->addAction(a);
-            connect(a, &QAction::triggered, this, [key = choice.key] { setThemeKey(key); });
-        }
-    });
+    m_themeMenu = view->addMenu(tr("Theme"));
+    connect(m_themeMenu, &QMenu::aboutToShow, this, &MainWindow::fillThemeMenu);
+    view->addSeparator();
+    view->addAction(m_paletteAct);
 
     QMenu *message = menuBar()->addMenu(tr("&Message"));
     message->addAction(m_replyAct);
@@ -221,6 +252,14 @@ void MainWindow::buildMenus()
     message->addAction(m_starAct);
     message->addAction(m_deleteAct);
 
+    // Extensions' commands go at the end of these, made again each time one opens.
+    m_extensionMenus = {{QStringLiteral("file"), file}, {QStringLiteral("edit"), edit}, {QStringLiteral("view"), view},
+                        {QStringLiteral("message"), message}};
+    for (auto it = m_extensionMenus.constBegin(); it != m_extensionMenus.constEnd(); ++it) {
+        connect(it.value(), &QMenu::aboutToShow, this,
+                [this, which = it.key(), menu = it.value()] { ExtensionMenu::addToMenuBar(menu, this, which); });
+    }
+
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     help->addAction(tr("About Argonaut Emails"), this, [this] {
         QMessageBox::about(this, tr("About Argonaut Emails"),
@@ -228,6 +267,65 @@ void MainWindow::buildMenus()
                               "License: GPL-3.0-or-later")
                                .arg(QStringLiteral(MAIL_VERSION)));
     });
+}
+
+void MainWindow::fillThemeMenu()
+{
+    m_themeMenu->clear();
+    auto *group = new QActionGroup(m_themeMenu);
+    const QString current = savedThemeKey();
+    for (const ThemeChoice &choice : allThemes()) {
+        QAction *a = m_themeMenu->addAction(choice.name);
+        a->setCheckable(true);
+        a->setChecked(choice.key == current);
+        group->addAction(a);
+        connect(a, &QAction::triggered, this, [key = choice.key] { setThemeKey(key); });
+    }
+}
+
+void MainWindow::showCommandPalette()
+{
+    if (!m_palette)
+        m_palette = new CommandPalette(this);
+    updateActions();
+    refreshExtensionMenus(); // extensions' menu commands are found like the rest
+    fillThemeMenu();         // "View › Theme › Forest": the themes there are now
+
+    QList<CommandPalette::Command> commands;
+    QSet<QAction *> seen{m_paletteAct};
+    auto clean = [](QString text) {
+        // "&Open" → "Open", but "Q && A" is "Q & A".
+        text.replace(QStringLiteral("&&"), QStringLiteral("\x01"));
+        text.remove(QLatin1Char('&'));
+        text.replace(QLatin1Char('\x01'), QLatin1Char('&'));
+        text.remove(QChar(0x2026));
+        return text.trimmed();
+    };
+    std::function<void(QMenu *, const QString &)> walk = [&](QMenu *menu, const QString &where) {
+        for (QAction *act : menu->actions()) {
+            if (act->isSeparator() || !act->isVisible())
+                continue;
+            if (QMenu *sub = act->menu()) {
+                walk(sub, where + QStringLiteral(" › ") + clean(sub->title()));
+                continue;
+            }
+            if (!act->isEnabled() || act->text().isEmpty() || seen.contains(act))
+                continue;
+            seen.insert(act);
+            // An extension's: "ext::Summarize Last Week…", in "File · Last Week with Claude".
+            const QString extension = act->property("argonautExtension").toString();
+            if (!extension.isEmpty())
+                commands.append({Extensions::paletteName(clean(act->text())),
+                                 where + QStringLiteral(" · ") + Extensions::Host::instance()->nameOf(extension), act});
+            else
+                commands.append({clean(act->text()), where, act});
+        }
+    };
+    for (QAction *top : menuBar()->actions()) {
+        if (QMenu *menu = top->menu())
+            walk(menu, clean(menu->title()));
+    }
+    m_palette->open(commands);
 }
 
 void MainWindow::buildToolBar()

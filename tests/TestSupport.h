@@ -20,6 +20,8 @@ public:
         qputenv("XDG_CACHE_HOME", root + "/cache");
         qputenv("XDG_RUNTIME_DIR", root + "/runtime");
         qputenv("MAIL_KEYSTORE", "file");
+        qunsetenv("ANTHROPIC_API_KEY"); // never the user's own key
+        qunsetenv("MAIL_EXTENSIONS_PATH");
         qputenv("QT_QPA_PLATFORM", "offscreen");
         qputenv("ARGONAUT_THEMES_PATH", "");
     }

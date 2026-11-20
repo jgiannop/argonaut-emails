@@ -1,0 +1,12 @@
+{
+    "id": "last-week",
+    "name": "Last Week with Claude",
+    "description": "File → Summarize Last Week with Claude…: Claude reads the messages that came to your inbox in the last seven days and writes a short report of what they are about, grouped by subject, with what may need you first. You see what will be sent before anything is. The report is shown in the message pane and kept in your Claude Reports folder (File → Claude Reports). It needs your Claude API key (Edit → Claude), which stays with Argonaut Emails.",
+    "version": "@PROJECT_VERSION@",
+    "author": "Argonaut",
+    "protocol": 1,
+    "uses": ["claude", "mail"],
+    "start": "when-needed",
+    "commands": [{"id": "summarize", "label": "Summarize Last Week with Claude…", "menu": "file"}],
+    "exec": ["@MAIL_WEEK_EXTENSION_EXE@"]
+}

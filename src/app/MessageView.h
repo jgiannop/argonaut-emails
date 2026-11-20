@@ -21,6 +21,10 @@ public:
 
     void showMessage(const QByteArray &raw);
     void showNote(const QString &text); // "Loading…", an error, or nothing chosen
+    // What an extension wrote (Claude's report), as HTML made safe: a title
+    // over it, a line under the title, in the theme's colours.
+    void showResult(const QString &title, const QString &html, const QString &note);
+    bool hasResult() const { return m_hasResult; }
     void applyTheme(const Theme &theme);
     const Mime::Message &message() const { return m_message; }
     bool hasMessage() const { return m_hasMessage; }
@@ -35,6 +39,8 @@ private:
     Mime::Message m_message;
     bool m_hasMessage = false;
     QString m_noteText; // the note shown, to show again in new colours
+    bool m_hasResult = false;
+    QString m_resultHtml;
     QWidget *m_header = nullptr;
     QLabel *m_subject = nullptr;
     QLabel *m_from = nullptr;

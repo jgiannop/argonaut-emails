@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Extensions.h"
 #include "MailStore.h"
 #include "Theme.h"
 
@@ -7,6 +8,7 @@
 #include <QMainWindow>
 #include <QPointer>
 
+class CommandPalette;
 class ComposeWindow;
 class FolderTree;
 class MessageList;
@@ -14,6 +16,7 @@ class MessageView;
 class QAction;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QSplitter;
 class QTabBar;
 class Sync;
@@ -40,6 +43,9 @@ public:
     void addSync(Sync *sync);
 
     ComposeWindow *compose(const QString &accountId = QString());
+    // Ctrl+Shift+P: every menu command, extensions' too (Argonaut's palette).
+    void showCommandPalette();
+    CommandPalette *palette() const { return m_palette; }
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -70,6 +76,18 @@ private:
     bool messageBeside() const;
     void loadSettings();
     void saveSettings();
+    void fillThemeMenu();
+    // Extensions (MainWindowExtensions.cpp): their commands in the menus,
+    // their results in the message pane, their forms over the window.
+    void connectExtensions();
+    void refreshExtensionMenus();
+    QJsonArray extensionSelection() const; // the chosen message, as told to an extension
+    void showExtensionResult(const Extensions::Result &result);
+    void showExtensionForm(const Extensions::Form &form);
+    void showClaudeWaiting(const QString &extension, const QString &name, int waiting);
+    void showExtensions();
+    void showClaudeSettings();
+    void openClaudeReports();
 
     MailStore *m_store;
     QHash<QString, Sync *> m_syncs;
@@ -100,4 +118,11 @@ private:
     QAction *m_searchAct = nullptr;
     QAction *m_belowAct = nullptr;  // View → Message Pane
     QAction *m_besideAct = nullptr;
+    QAction *m_paletteAct = nullptr;
+    QAction *m_extensionsAct = nullptr;
+    QAction *m_claudeAct = nullptr;
+    QAction *m_reportsAct = nullptr;
+    QMenu *m_themeMenu = nullptr;
+    QHash<QString, QMenu *> m_extensionMenus; // "file", "edit", "view", "message"
+    CommandPalette *m_palette = nullptr;
 };

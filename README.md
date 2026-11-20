@@ -33,6 +33,20 @@ Version 0.1.0: the first working version.
 - **Delete** moves a message to the account's Trash.
 - **Themes**: Argonaut's themes, including theme files from
   `~/.local/share/argonaut/themes`.
+- **Command palette** (Ctrl+Shift+P), as in Argonaut: type a few letters of
+  any command and press Enter.
+- **Extensions**, as in Argonaut: small programs that add commands (Edit →
+  Extensions, Ctrl+Shift+X). How to write one: [docs/extensions.md](docs/extensions.md).
+  The first comes with the program: **Last Week with Claude** (File →
+  Summarize Last Week with Claude…): Claude reads the last seven days of
+  your inbox and writes a short report of what it was about, grouped by
+  subject, with what may need you first. You're told what will be sent
+  before anything is, and you choose whether Claude reads only senders and
+  subjects or also the beginning of each message. It needs your Anthropic
+  API key (Edit → Claude), which stays in your keyring; extensions never see
+  it. Every answer is kept, with everything that was sent, as a page in
+  `~/.local/share/Argonaut/argonaut-emails/claudeReports` (File → Claude
+  Reports).
 
 ## Security
 

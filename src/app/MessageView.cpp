@@ -113,6 +113,7 @@ MessageView::MessageView(QWidget *parent)
 void MessageView::showNote(const QString &text)
 {
     m_hasMessage = false;
+    m_hasResult = false;
     m_noteText = text;
     m_body->showNote(text); // first: the page lets go of the message
     m_message = Mime::Message();
@@ -121,10 +122,30 @@ void MessageView::showNote(const QString &text)
     m_noteBar->hide();
 }
 
+void MessageView::showResult(const QString &title, const QString &html, const QString &note)
+{
+    m_hasMessage = false;
+    m_hasResult = true;
+    m_noteText.clear();
+    m_resultHtml = html;
+    m_body->showHtml(html, nullptr, false, true); // first: the page lets go of the message
+    m_message = Mime::Message();
+    m_subject->setText(title);
+    m_from->setText(note);
+    m_from->setVisible(!note.isEmpty());
+    m_to->hide();
+    m_date->hide();
+    m_header->show();
+    m_files->hide();
+    m_noteBar->hide();
+}
+
 void MessageView::showMessage(const QByteArray &raw)
 {
     m_message = Mime::parse(raw);
     m_hasMessage = true;
+    m_hasResult = false;
+    m_from->show();
     m_subject->setText(m_message.subject().isEmpty() ? tr("(no subject)") : m_message.subject());
     m_from->setText(tr("From: %1").arg(people(m_message.from())));
     QString to = people(m_message.to());
@@ -199,6 +220,8 @@ void MessageView::applyTheme(const Theme &theme)
     // What is shown, again in the new colours (a designed message stays on white, its pictures as they were).
     if (m_hasMessage)
         showBody(m_body->remotePicturesAllowed());
+    else if (m_hasResult)
+        m_body->showHtml(m_resultHtml, nullptr, false, true);
     else if (!m_noteText.isEmpty())
         m_body->showNote(m_noteText);
 }

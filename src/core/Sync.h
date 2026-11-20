@@ -42,6 +42,9 @@ public:
     using BodyDone = std::function<void(const QByteArray &raw, const QString &error)>;
     // From the store when it was opened before, else from the server (kept).
     void fetchBody(const QByteArray &path, qint64 uid, BodyDone done);
+    // Several messages at once (an extension reads them), kept in the store
+    // as they come, in batches; `done` once, with the first error if any.
+    void fetchBodies(const QByteArray &path, const QList<qint64> &uids, std::function<void(const QString &error)> done);
     void setSeen(const QByteArray &path, qint64 uid, bool seen);
     void setFlagged(const QByteArray &path, qint64 uid, bool flagged);
     void setAnswered(const QByteArray &path, qint64 uid);
@@ -76,6 +79,8 @@ private:
     // Gmail: which of the inbox's messages are in which tab (X-GM-RAW "category:…").
     void readCategories(const QByteArray &path, std::function<void()> next);
     void readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QStringList>> found, std::function<void()> next);
+    void fetchBatch(const QByteArray &path, std::shared_ptr<QList<qint64>> left, std::function<void(const QString &error)> done,
+                    std::function<void()> next);
     void storeFlag(const QByteArray &path, qint64 uid, const QByteArray &flag, bool on);
 
     Account m_account;
