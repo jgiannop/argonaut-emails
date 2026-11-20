@@ -34,6 +34,7 @@ private:
 
     Mime::Message m_message;
     bool m_hasMessage = false;
+    QString m_noteText; // the note shown, to show again in new colours
     QWidget *m_header = nullptr;
     QLabel *m_subject = nullptr;
     QLabel *m_from = nullptr;

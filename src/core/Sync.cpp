@@ -159,7 +159,15 @@ void Sync::syncFolder(const QByteArray &path)
 
 void Sync::enqueue(Op op)
 {
-    m_ops.append(std::move(op));
+    if (op.urgent) {
+        // After the urgent ones already waiting, before everything else.
+        qsizetype at = 0;
+        while (at < m_ops.size() && m_ops.at(at).urgent)
+            ++at;
+        m_ops.insert(at, std::move(op));
+    } else {
+        m_ops.append(std::move(op));
+    }
     runNext();
 }
 
@@ -428,6 +436,7 @@ void Sync::fetchBody(const QByteArray &path, qint64 uid, BodyDone done)
     }
     Op op;
     op.what = tr("Opening the message");
+    op.urgent = true; // the user is waiting for it
     op.failed = [done](const QString &e) { done({}, e); };
     op.run = [this, path, uid, done](std::function<void()> next) {
         auto fetch = [this, path, uid, done, next] {

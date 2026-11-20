@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSplitter>
 #include <QTabBar>
 #include <QTest>
 #include <QTreeWidget>
@@ -171,6 +172,64 @@ private slots:
         QVERIFY(window.tabs()->isVisible());
         QCOMPARE(window.tabs()->currentIndex(), 0);
         QCOMPARE(window.list()->messages()->rowCount(), 2);
+    }
+
+    void messageBesideTheList()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        MailStore store(QDir::homePath() + QStringLiteral("/beside.sqlite"));
+        {
+            MainWindow window(&store);
+            window.resize(1200, 800);
+            window.show();
+            QSplitter *split = window.listAndMessage();
+            QCOMPARE(split->orientation(), Qt::Vertical); // as before: the message under the list
+            split->setSizes({200, 500});
+            const QList<int> below = split->sizes();
+
+            window.besideAction()->trigger();
+            QCOMPARE(split->orientation(), Qt::Horizontal);
+            QCOMPARE(split->widget(0)->isAncestorOf(window.list()), true); // the list at the left
+            QCOMPARE(split->widget(1), static_cast<QWidget *>(window.view())); // the message at the right
+            QVERIFY(split->sizes().at(1) > split->sizes().at(0)); // the message gets the most
+            split->setSizes({300, 600});
+            const QList<int> beside = split->sizes();
+
+            // Back and forth: each way keeps its own sizes.
+            for (QAction *a : window.findChildren<QAction *>()) {
+                if (a->text() == QStringLiteral("Below the List"))
+                    a->trigger();
+            }
+            QCOMPARE(split->orientation(), Qt::Vertical);
+            QCOMPARE(split->sizes(), below);
+            window.besideAction()->trigger();
+            QCOMPARE(split->sizes(), beside);
+            window.close(); // saves
+        }
+        // A new window: as it was left.
+        MainWindow again(&store);
+        again.resize(1200, 800);
+        QCOMPARE(again.listAndMessage()->orientation(), Qt::Horizontal);
+        QVERIFY(again.besideAction()->isChecked());
+        for (QAction *a : again.findChildren<QAction *>()) { // the other tests want it below
+            if (a->text() == QStringLiteral("Below the List"))
+                a->trigger();
+        }
+        again.close();
+    }
+
+    void themeChangesAtOnce()
+    {
+        MailStore store(QDir::homePath() + QStringLiteral("/theme.sqlite"));
+        MainWindow window(&store);
+        window.show();
+        // The palette's events are posted: a moment, not a restart.
+        setThemeKey(QStringLiteral("light"));
+        QTRY_VERIFY(window.styleSheet().contains(cssColor(Theme::forMode(ThemeMode::Light).window)));
+        setThemeKey(QStringLiteral("dark"));
+        QTRY_VERIFY(window.styleSheet().contains(cssColor(Theme::forMode(ThemeMode::Dark).window)));
+        setThemeKey(QStringLiteral("system"));
     }
 
     void wrongPasswordCanBeFixed()

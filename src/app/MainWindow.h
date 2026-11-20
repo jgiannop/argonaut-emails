@@ -32,6 +32,8 @@ public:
     FolderTree *folders() const { return m_folders; }
     MessageList *list() const { return m_list; }
     MessageView *view() const { return m_view; }
+    QSplitter *listAndMessage() const { return m_rightSplit; }
+    QAction *besideAction() const { return m_besideAct; }
     QTabBar *tabs() const { return m_tabs; }
     Sync *syncFor(const QString &accountId) const { return m_syncs.value(accountId); }
     // Starts (or starts again) an account's sync; tests hand it their own.
@@ -63,6 +65,9 @@ private:
     void updateActions();
     QString chosenAccount() const; // the one chosen in the tree, else the only one
     void applyTheme();
+    // The message under the list (as in 0.1), or beside it.
+    void setMessageBeside(bool beside);
+    bool messageBeside() const;
     void loadSettings();
     void saveSettings();
 
@@ -93,4 +98,6 @@ private:
     QAction *m_removeAccountAct = nullptr;
     QAction *m_quitAct = nullptr;
     QAction *m_searchAct = nullptr;
+    QAction *m_belowAct = nullptr;  // View → Message Pane
+    QAction *m_besideAct = nullptr;
 };

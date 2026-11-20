@@ -283,6 +283,35 @@ private slots:
         QVERIFY(store.categoryCounts(account().id, "INBOX").isEmpty());
     }
 
+    void openingAMessageDoesntWait()
+    {
+        FakeImap server;
+        server.add("INBOX", mail(1));
+        for (const QByteArray box : {"A", "B", "C", "D"})
+            server.add(box, mail(2));
+        MailStore store(QDir::homePath() + QStringLiteral("/urgent.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.start();
+        waitIdle(sync);
+        server.log.clear();
+        // Folders to check, then a message opened: it goes before the checks still waiting.
+        for (const QByteArray box : {"A", "B", "C", "D"})
+            sync.syncFolder(box);
+        QByteArray raw;
+        sync.fetchBody("INBOX", 1, [&raw](const QByteArray &r, const QString &) { raw = r; });
+        waitIdle(sync);
+        QVERIFY(raw.contains("Body of message 1"));
+        const qsizetype body = server.log.indexOf("UID FETCH 1 (UID BODY.PEEK[])");
+        QVERIFY2(body >= 0, qPrintable(QString::fromLatin1(server.log.join('\n'))));
+        qsizetype lastSelect = -1;
+        for (qsizetype i = 0; i < server.log.size(); ++i) {
+            if (server.log.at(i).startsWith("SELECT"))
+                lastSelect = i;
+        }
+        QVERIFY(body < lastSelect); // folders B, C, D were checked after it
+    }
+
     void newUidValidityStartsAgain()
     {
         FakeImap server;

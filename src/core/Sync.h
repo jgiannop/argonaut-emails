@@ -64,6 +64,7 @@ private:
         QString what; // for the status line
         std::function<void(std::function<void()> next)> run;
         std::function<void(const QString &error)> failed;
+        bool urgent = false; // someone waits for it (a message being opened): before the folder checks
     };
 
     void enqueue(Op op);

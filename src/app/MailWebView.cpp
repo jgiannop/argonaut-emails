@@ -3,6 +3,7 @@
 #include <QBuffer>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
+#include <QLoggingCategory>
 #include <QMenu>
 #include <QRegularExpression>
 #include <QWebEngineContextMenuRequest>
@@ -128,6 +129,12 @@ void MailWebView::prepare()
     scheme.setFlags(QWebEngineUrlScheme::SecureScheme); // https pictures in it aren't "mixed content"
     QWebEngineUrlScheme::registerScheme(scheme);
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    // Quiet: WebEngine's startup report (an info message) and Chromium's own log, whose
+    // "errors" are its internals (Qt 6.4: "Message 0 rejected by interface blink.mojom.WidgetHost").
+    QLoggingCategory::setFilterRules(QStringLiteral("qt.webenginecontext.info=false"));
+    QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+    if (!flags.contains("--log-level"))
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", (flags + " --log-level=3").trimmed()); // fatal ones only
 }
 
 MailWebView::MailWebView(QWidget *parent)

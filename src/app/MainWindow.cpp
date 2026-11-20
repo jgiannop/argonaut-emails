@@ -186,6 +186,18 @@ void MainWindow::buildMenus()
     edit->addAction(m_deleteAct);
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
+    QMenu *pane = view->addMenu(tr("Message Pane"));
+    auto *paneGroup = new QActionGroup(pane);
+    m_belowAct = pane->addAction(tr("Below the List"));
+    m_besideAct = pane->addAction(tr("Beside the List"));
+    for (QAction *a : {m_belowAct, m_besideAct}) {
+        a->setCheckable(true);
+        paneGroup->addAction(a);
+    }
+    m_belowAct->setChecked(true);
+    connect(m_belowAct, &QAction::triggered, this, [this] { setMessageBeside(false); });
+    connect(m_besideAct, &QAction::triggered, this, [this] { setMessageBeside(true); });
+    view->addSeparator();
     QMenu *themes = view->addMenu(tr("Theme"));
     connect(themes, &QMenu::aboutToShow, this, [this, themes] {
         themes->clear();
@@ -535,9 +547,44 @@ void MainWindow::applyTheme()
 
 void MainWindow::changeEvent(QEvent *event)
 {
-    if (event->type() == QEvent::ApplicationPaletteChange)
+    // Qt 6 doesn't hand ApplicationPaletteChange to changeEvent(): the PaletteChange that follows it is
+    // what arrives here. applyTheme() does nothing when the theme is the same (its own style sheet).
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange)
         applyTheme();
     QMainWindow::changeEvent(event);
+}
+
+namespace {
+
+// Where the list | message divider was, one for each way.
+QString splitKey(bool beside)
+{
+    return beside ? QStringLiteral("window/rightSplitBeside") : QStringLiteral("window/rightSplit");
+}
+
+} // namespace
+
+bool MainWindow::messageBeside() const
+{
+    return m_rightSplit->orientation() == Qt::Horizontal;
+}
+
+void MainWindow::setMessageBeside(bool beside)
+{
+    m_besideAct->setChecked(beside);
+    m_belowAct->setChecked(!beside);
+    if (beside == messageBeside())
+        return;
+    QSettings s;
+    s.setValue(splitKey(messageBeside()), m_rightSplit->saveState()); // the way it was, for coming back
+    s.setValue(QStringLiteral("window/messageBeside"), beside);
+    m_rightSplit->setOrientation(beside ? Qt::Horizontal : Qt::Vertical);
+    const QByteArray state = s.value(splitKey(beside)).toByteArray();
+    if (state.isEmpty() || !m_rightSplit->restoreState(state)) {
+        // The first time: the list two fifths, the message the rest.
+        const int whole = beside ? m_rightSplit->width() : m_rightSplit->height();
+        m_rightSplit->setSizes({whole * 2 / 5, whole - whole * 2 / 5});
+    }
 }
 
 void MainWindow::loadSettings()
@@ -546,10 +593,14 @@ void MainWindow::loadSettings()
     restoreGeometry(s.value(QStringLiteral("window/geometry")).toByteArray());
     if (!s.value(QStringLiteral("window/split")).isNull())
         m_split->restoreState(s.value(QStringLiteral("window/split")).toByteArray());
-    if (!s.value(QStringLiteral("window/rightSplit")).isNull())
-        m_rightSplit->restoreState(s.value(QStringLiteral("window/rightSplit")).toByteArray());
     if (!s.contains(QStringLiteral("window/geometry")))
         resize(1200, 800);
+    const bool beside = s.value(QStringLiteral("window/messageBeside"), false).toBool();
+    m_besideAct->setChecked(beside);
+    m_belowAct->setChecked(!beside);
+    m_rightSplit->setOrientation(beside ? Qt::Horizontal : Qt::Vertical);
+    if (!s.value(splitKey(beside)).isNull())
+        m_rightSplit->restoreState(s.value(splitKey(beside)).toByteArray());
 }
 
 void MainWindow::saveSettings()
@@ -557,7 +608,8 @@ void MainWindow::saveSettings()
     QSettings s;
     s.setValue(QStringLiteral("window/geometry"), saveGeometry());
     s.setValue(QStringLiteral("window/split"), m_split->saveState());
-    s.setValue(QStringLiteral("window/rightSplit"), m_rightSplit->saveState());
+    s.setValue(splitKey(messageBeside()), m_rightSplit->saveState());
+    s.setValue(QStringLiteral("window/messageBeside"), messageBeside());
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
