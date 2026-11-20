@@ -42,6 +42,6 @@ Tests are Qt Test, one line each in `tests/CMakeLists.txt` (`mail_test(name [LIB
 
 - **Ask before every commit**; push and release only when asked. Commits use the address already in this repository's git config (a GitHub noreply address); never put the owner's personal email anywhere.
 - **Never add Claude attribution or `Co-Authored-By` lines** to commits or pull requests.
-- No remote yet: the GitHub repository `jgiannop/argonaut-emails` is to be made by the owner, then added as `origin` and pushed.
+- The remote is `origin`, https://github.com/jgiannop/argonaut-emails, branch `master` (as Argonaut). Push only when asked.
 - Never type a password or an app password for the owner, and never connect a test to a real mail account: the owner adds accounts in the program themselves.
 - Prefer plain-text questions and direct action; keep the debug build free of warnings and every test passing.
