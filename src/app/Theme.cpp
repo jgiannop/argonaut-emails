@@ -878,8 +878,9 @@ QIcon glyphIcon(Glyph glyph, const QColor &color)
     return QIcon(new GlyphEngine(glyph, color));
 }
 
-// The app icon: a blue folder with a white K. Same geometry as
-// data/argonaut.svg (128x128), drawn in code so no SVG plugin is needed.
+// The app icon: Argonaut's orange with its boat, on a letter instead of a
+// folder. Same geometry as data/argonaut-emails.svg (128x128), drawn in code
+// so no SVG plugin is needed.
 QIcon applicationIcon()
 {
     QIcon icon;
@@ -890,27 +891,22 @@ QIcon applicationIcon()
         p.setRenderHint(QPainter::Antialiasing);
         p.scale(size / 128.0, size / 128.0);
         p.setPen(Qt::NoPen);
-        QPainterPath back;
-        back.moveTo(14, 26);
-        back.arcTo(QRectF(14, 16, 20, 20), 180, -90);
-        back.lineTo(50, 16);
-        back.lineTo(60, 26);
-        back.lineTo(104, 26);
-        back.arcTo(QRectF(94, 26, 20, 20), 90, -90);
-        back.lineTo(114, 44);
-        back.lineTo(14, 44);
-        back.closeSubpath();
+        // The envelope: its back edge, its front and the flap.
         p.setBrush(QColor("#c64600"));
-        p.drawPath(back);
-        p.setBrush(QColor("#e66100"));
-        p.drawRoundedRect(QRectF(14, 36, 100, 78), 10, 10);
-        QLinearGradient front(0, 44, 0, 114);
+        p.drawRoundedRect(QRectF(10, 24, 108, 84), 10, 10);
+        QLinearGradient front(0, 28, 0, 108);
         front.setColorAt(0, QColor("#ffa348"));
         front.setColorAt(1, QColor("#ff7800"));
         p.setBrush(front);
-        p.drawRoundedRect(QRectF(10, 44, 108, 70), 10, 10);
+        p.drawRoundedRect(QRectF(10, 28, 108, 80), 10, 10);
+        p.setPen(QPen(QColor("#e66100"), 6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setBrush(Qt::NoBrush);
+        p.drawPolyline(QPolygonF({QPointF(16, 34), QPointF(64, 56), QPointF(112, 34)}));
 
-        // The Argo: mast, mainsail, jib and hull.
+        // The Argo (Argonaut's mast, mainsail, jib and hull), a little smaller, under the flap.
+        p.translate(64, 65);
+        p.scale(0.76, 0.76);
+        p.translate(-66, -54);
         p.setPen(QPen(Qt::white, 5, Qt::SolidLine, Qt::RoundCap));
         p.drawLine(QPointF(66, 54), QPointF(66, 90));
         p.setPen(Qt::NoPen);

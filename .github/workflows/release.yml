@@ -1,0 +1,108 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching project(argonaut-emails VERSION ...) in
+# CMakeLists.txt) to build the .deb packages and publish them as a GitHub
+# Release, as Argonaut does.
+#
+# A .deb names the libraries it needs as the system it was built on names
+# them, and those names differ between releases of Ubuntu and Debian (Qt's
+# are libqt6gui6t64 on Ubuntu 24.04 and libqt6gui6 on newer ones). So one
+# package is built for each system in the list below, inside that system's
+# own image, and named after it: argonaut-emails_0.2.0_ubuntu26.04_amd64.deb.
+# To support another system, add a line to the list (here and in ci.yml).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    name: .deb for ${{ matrix.system }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { system: ubuntu24.04, image: 'ubuntu:24.04' }
+          - { system: ubuntu26.04, image: 'ubuntu:26.04' }
+          - { system: debian13, image: 'debian:13' }
+    steps:
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates build-essential cmake ninja-build qt6-base-dev qt6-webengine-dev \
+            dpkg-dev file
+
+      - uses: actions/checkout@v5
+
+      - name: Check the tag matches the project version
+        run: |
+          version=$(sed -n 's/^project(argonaut-emails VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match CMakeLists.txt version $version" >&2
+            exit 1
+          fi
+
+      - name: Build the package
+        run: |
+          cmake --preset package
+          cmake --build build/package
+          cpack --config build/package/CPackConfig.cmake
+
+      # argonaut-emails_0.2.0_amd64.deb -> argonaut-emails_0.2.0_ubuntu26.04_amd64.deb
+      - name: Name it after the system
+        run: |
+          mkdir out
+          for deb in build/package/*.deb; do
+            name=$(basename "$deb" .deb)
+            mv "$deb" "out/${name%_*}_${{ matrix.system }}_${name##*_}.deb"
+          done
+          ls -l out
+
+      # It must install where it was built, with what apt can find there.
+      - name: Check that it installs
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get install -y --no-install-recommends ./out/*.deb
+          argonaut-emails --version
+          argonaut-emails --help > /dev/null
+          ldd /usr/bin/argonaut-emails | grep -q libQt6DBus
+          test -f /usr/share/icons/hicolor/scalable/apps/argonaut-emails.svg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.system }}
+          path: out/*.deb
+          if-no-files-found: error
+
+  publish:
+    needs: deb
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: out
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        # A tag pushed again (e.g. moved to a fixed commit) replaces the
+        # packages of its existing release instead of failing.
+        run: |
+          ls -l out
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" out/*.deb --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" out/*.deb \
+              --title "Argonaut Emails ${GITHUB_REF_NAME#v}" --generate-notes
+          fi

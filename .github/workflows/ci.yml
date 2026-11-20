@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev qt6-webengine-dev libqt6sql6-sqlite
+
+      - name: Configure
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build build/debug
+
+      # A failing test's own words go on the run as notes: they can be read
+      # there without signing in (the log can't).
+      - name: Test
+        run: |
+          set +e
+          ctest --preset debug --output-on-failure 2>&1 | tee tests.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            python3 .github/scripts/errors_as_notes.py tests.log "tests (debug)" 'FAIL!|Loc: |\*\*\*|QFATAL|Timeout|timed out|AddressSanitizer|runtime error|SUMMARY|tests passed|#[0-9]+ 0x'
+          fi
+          exit $status
+
+  # The package builds and installs on every system a release is made for
+  # (release.yml has the same list): a newer compiler or Qt that the code
+  # doesn't suit is found here, not on the day of a release.
+  package:
+    name: package on ${{ matrix.system }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { system: ubuntu24.04, image: 'ubuntu:24.04' }
+          - { system: ubuntu26.04, image: 'ubuntu:26.04' }
+          - { system: debian13, image: 'debian:13' }
+    steps:
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates build-essential cmake ninja-build qt6-base-dev qt6-webengine-dev \
+            dpkg-dev file
+
+      - uses: actions/checkout@v5
+
+      - name: Build the package
+        run: |
+          cmake --preset package
+          cmake --build build/package
+          cpack --config build/package/CPackConfig.cmake
+
+      - name: Check that it installs
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get install -y --no-install-recommends ./build/package/*.deb
+          argonaut-emails --version
+          argonaut-emails --help > /dev/null
+          # Passwords go to the desktop's keyring: Qt D-Bus is in it.
+          ldd /usr/bin/argonaut-emails | grep -q libQt6DBus
+          test -f /usr/share/icons/hicolor/scalable/apps/argonaut-emails.svg

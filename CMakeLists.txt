@@ -70,7 +70,16 @@ if(UNIX AND NOT APPLE)
     set(MAIL_EXE "${CMAKE_INSTALL_FULL_BINDIR}/argonaut-emails")
     configure_file(data/argonaut-emails.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/argonaut-emails.desktop @ONLY)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/argonaut-emails.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES data/argonaut-emails.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+    # Let menus and the dock see the new entry right away.
+    install(CODE [[
+        find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
+        if(UPDATE_DESKTOP_DATABASE AND "$ENV{DESTDIR}" STREQUAL "")
+            execute_process(COMMAND ${UPDATE_DESKTOP_DATABASE} "${CMAKE_INSTALL_PREFIX}/share/applications")
+        endif()
+    ]])
 endif()
+install(FILES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 # ---------------------------------------------------------- extensions ---
 # Separate programs (src/core/Extensions.h, docs/extensions.md), as in
@@ -86,6 +95,39 @@ configure_file(extensions/week/extension.json.in ${CMAKE_CURRENT_BINARY_DIR}/ins
 install(TARGETS argonaut-emails-week-extension RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/argonaut-emails)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/install/last-week/extension.json
         DESTINATION ${CMAKE_INSTALL_DATADIR}/argonaut-emails/extensions/last-week)
+
+# A package for other people has every feature, or isn't made: without Qt
+# D-Bus, passwords would go into a private file instead of the desktop's
+# keyring, and nobody would notice. The `package` preset switches this on.
+option(MAIL_REQUIRE_ALL_FEATURES "Fail when an optional feature can't be built" OFF)
+if(MAIL_REQUIRE_ALL_FEATURES AND UNIX AND NOT APPLE AND NOT Qt6DBus_FOUND)
+    message(FATAL_ERROR "This build is to have every feature (MAIL_REQUIRE_ALL_FEATURES), and Qt D-Bus is missing (passwords in the desktop keyring)")
+endif()
+
+# ------------------------------------------------------------- package ---
+# A .deb for Ubuntu and Debian, as Argonaut's: `cmake --preset package &&
+# cmake --build build/package && cpack --config build/package/CPackConfig.cmake`.
+# Library dependencies are worked out by dpkg-shlibdeps; Qt's SQLite driver
+# is a plugin, which it can't see, so it is named.
+set(CPACK_PACKAGE_NAME "argonaut-emails")
+set(CPACK_PACKAGE_VENDOR "johngiannop")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/jgiannop/argonaut-emails")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "An email client with Argonaut's look")
+set(CPACK_PACKAGE_DESCRIPTION "Argonaut Emails is an email client written in C++ and Qt 6, the companion of \
+the Argonaut file manager: IMAP and SMTP accounts (Gmail's inbox tabs too), three panes, messages \
+shown locked (no scripts, no pictures from the internet until asked), passwords in the desktop's keyring.")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+# Into the build folder, not wherever cpack is run from.
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}")
+set(CPACK_GENERATOR "DEB")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "johngiannop")
+set(CPACK_DEBIAN_PACKAGE_SECTION "mail")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/jgiannop/argonaut-emails")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6sql6-sqlite")
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "qt6-wayland, gnome-keyring | kwalletmanager, xdg-utils")
+include(CPack)
 
 include(CTest)
 if(BUILD_TESTING)

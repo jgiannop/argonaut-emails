@@ -5,8 +5,23 @@
 
 #include <QApplication>
 
+#include <cstdio>
+#include <cstring>
+
 int main(int argc, char **argv)
 {
+    // Answered before anything starts, so they work without a display (the package's install check uses them).
+    for (int i = 1; i < argc; ++i) {
+        if (!std::strcmp(argv[i], "--version") || !std::strcmp(argv[i], "-v")) {
+            std::printf("argonaut-emails %s\n", MAIL_VERSION);
+            return 0;
+        }
+        if (!std::strcmp(argv[i], "--help") || !std::strcmp(argv[i], "-h")) {
+            std::printf("Usage: argonaut-emails [--version] [--help]\n\n"
+                        "Argonaut Emails, an email client (IMAP and SMTP) in Qt.\n");
+            return 0;
+        }
+    }
     MailWebView::prepare(); // before the application
     QApplication app(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("Argonaut"));

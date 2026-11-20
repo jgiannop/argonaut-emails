@@ -58,6 +58,19 @@ Version 0.1.0: the first working version.
 - The mail kept on this computer (`~/.local/share/Argonaut/argonaut-emails/mail.sqlite`)
   can be read only by you.
 
+## Installing
+
+Each [release](https://github.com/jgiannop/argonaut-emails/releases) has a
+`.deb` for Ubuntu 24.04, Ubuntu 26.04 and Debian 13. Download the one for
+your system and install it with apt, which also installs what it needs:
+
+```bash
+sudo apt install ./argonaut-emails_0.1.0_ubuntu24.04_amd64.deb
+```
+
+It appears in the applications as **Argonaut Emails**, with its icon: an
+orange letter with Argonaut's boat on it.
+
 ## Building
 
 Dependencies (Ubuntu 24.04): `cmake ninja-build qt6-base-dev qt6-webengine-dev libqt6sql6-sqlite`.

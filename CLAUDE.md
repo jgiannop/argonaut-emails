@@ -18,6 +18,8 @@ The debug build uses `-Wall -Wextra -Wshadow=local` and **is free of warnings: k
 
 Tests are Qt Test, one line each in `tests/CMakeLists.txt` (`mail_test(name [LIBRARY mail_app])`). **Every test's `main()` is `MAIL_TEST_MAIN`** (`tests/TestSupport.h`): a private HOME and XDG folders, offscreen, `MAIL_KEYSTORE=file`, so tests never touch the real settings, mail store or keyring. **Tests never talk to a real mail server**: `tests/FakeServers.h` has `FakeImap` and `FakeSmtp` on 127.0.0.1, which log what they were asked. `MAIL_TEST_GRAB=<file.png> tst_mainwindow` saves a picture of the window.
 
+Packages and releases, as in Argonaut: `cmake --preset package && cmake --build build/package && cpack --config build/package/CPackConfig.cmake` makes `argonaut-emails_<version>_amd64.deb` (prefix `/usr`, no tests; `MAIL_REQUIRE_ALL_FEATURES` fails the build without Qt D-Bus; dependencies from dpkg-shlibdeps plus `libqt6sql6-sqlite`, the SQLite plugin it can't see). `.github/workflows/ci.yml` builds and tests on every push to master and dev, and builds and installs the package on Ubuntu 24.04, Ubuntu 26.04 and Debian 13; **pushing a tag `vX.Y.Z` that matches `project(argonaut-emails VERSION …)`** runs `release.yml`, which builds a .deb on each of those systems (named after it: `…_ubuntu24.04_amd64.deb`) and publishes the GitHub Release. `--version` and `--help` are answered before anything starts (the install checks use them). The icon is `applicationIcon()` in `src/app/Theme.cpp` (an orange letter with Argonaut's boat), drawn in code; `data/argonaut-emails.svg` is the same drawing for the desktop and the dock (`Icon=argonaut-emails`): change both together.
+
 ## Architecture
 
 - `mail_core` (`src/core`, no widgets, all of it tested):
