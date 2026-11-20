@@ -8,7 +8,7 @@ namespace SafeHtml {
 namespace {
 
 // Elements taken out with what is inside them.
-const QSet<QString> kDropped{QStringLiteral("script"), QStringLiteral("style"),    QStringLiteral("head"),
+const QSet<QString> kDropped{QStringLiteral("script"),
                              QStringLiteral("title"),  QStringLiteral("iframe"),   QStringLiteral("frame"),
                              QStringLiteral("frameset"), QStringLiteral("object"), QStringLiteral("embed"),
                              QStringLiteral("template"), QStringLiteral("svg"),    QStringLiteral("canvas"),
@@ -19,12 +19,12 @@ const QSet<QString> kUnwrapped{QStringLiteral("form"),  QStringLiteral("input"),
                                QStringLiteral("select"), QStringLiteral("option"), QStringLiteral("textarea"),
                                QStringLiteral("link"),  QStringLiteral("meta"),   QStringLiteral("base"),
                                QStringLiteral("html"),  QStringLiteral("body"),   QStringLiteral("source"),
-                               QStringLiteral("picture")};
-
-QString escape(const QString &text)
-{
-    return text.toHtmlEscaped();
-}
+                               QStringLiteral("picture"), QStringLiteral("head")};
+// Attributes never kept: scripts are on…; the rest loads or sends something by itself.
+const QSet<QString> kDroppedAttributes{QStringLiteral("srcset"), QStringLiteral("target"), QStringLiteral("ping"),
+                                       QStringLiteral("formaction"), QStringLiteral("action"), QStringLiteral("http-equiv"),
+                                       QStringLiteral("srcdoc"), QStringLiteral("data"), QStringLiteral("codebase"),
+                                       QStringLiteral("lowsrc"), QStringLiteral("dynsrc"), QStringLiteral("poster")};
 
 struct Tag
 {
@@ -94,6 +94,19 @@ bool isRemote(const QString &url)
         || u.startsWith(QLatin1String("ftp:"));
 }
 
+// CSS: how many url(…) of it are on the internet.
+int remoteUrls(const QString &css)
+{
+    static const QRegularExpression url(QStringLiteral("url\\(\\s*['\"]?\\s*(https?:|//)"), QRegularExpression::CaseInsensitiveOption);
+    int n = 0;
+    auto it = url.globalMatch(css);
+    while (it.hasNext()) {
+        it.next();
+        ++n;
+    }
+    return n;
+}
+
 bool isSafeLink(const QString &url)
 {
     const QString u = url.trimmed().toLower();
@@ -142,6 +155,23 @@ Result clean(const QString &html)
             continue;
         }
         i = end;
+        if (tag.name == QLatin1String("style") && !tag.closing) {
+            // CSS as it is, to its end tag (the browser reads it as text too); <style> has no attributes worth keeping.
+            static const QRegularExpression styleEnd(QStringLiteral("</style"), QRegularExpression::CaseInsensitiveOption);
+            const qsizetype close = html.indexOf(styleEnd, i);
+            const QString css = html.mid(i, (close < 0 ? html.size() : close) - i);
+            r.remotePictures += remoteUrls(css);
+            out += QStringLiteral("<style>") + css + QStringLiteral("</style>");
+            if (close < 0) {
+                i = html.size();
+            } else {
+                const qsizetype gt = html.indexOf(QLatin1Char('>'), close);
+                i = gt < 0 ? html.size() : gt + 1;
+            }
+            continue;
+        }
+        if (tag.name == QLatin1String("style"))
+            continue; // a stray end tag
         if (kDropped.contains(tag.name)) {
             if (!tag.closing) { // to its end tag, or the end
                 static const QString closeFormat = QStringLiteral("</%1");
@@ -161,39 +191,41 @@ Result clean(const QString &html)
             out += QStringLiteral("</") + tag.name + QLatin1Char('>');
             continue;
         }
-        if (tag.name == QLatin1String("img")) {
-            QString src;
-            QString alt;
-            for (const auto &a : std::as_const(tag.attributes)) {
-                if (a.first == QLatin1String("src"))
-                    src = a.second.trimmed();
-                else if (a.first == QLatin1String("alt"))
-                    alt = a.second;
-            }
-            if (src.startsWith(QLatin1String("cid:"), Qt::CaseInsensitive)) {
-                out += QStringLiteral("<img src=\"") + attributeText(src) + QStringLiteral("\">");
-            } else {
-                if (isRemote(src))
-                    ++r.remotePictures;
-                if (!alt.trimmed().isEmpty())
-                    out += QStringLiteral("<i>[") + escape(alt.trimmed()) + QStringLiteral("]</i>");
-            }
-            continue;
-        }
+        const bool img = tag.name == QLatin1String("img");
         QString kept = QLatin1Char('<') + tag.name;
+        bool hasSource = false;
         for (const auto &a : std::as_const(tag.attributes)) {
-            if (a.first.startsWith(QLatin1String("on")) || a.first == QLatin1String("background") || a.first == QLatin1String("srcset")
-                || a.first == QLatin1String("src"))
+            if (a.first.startsWith(QLatin1String("on")) || kDroppedAttributes.contains(a.first))
                 continue;
             if (a.first == QLatin1String("href") && !isSafeLink(a.second))
                 continue;
-            if (a.first == QLatin1String("style") && a.second.contains(QLatin1String("url("), Qt::CaseInsensitive)) {
-                if (a.second.contains(QLatin1String("http"), Qt::CaseInsensitive))
+            if (a.first == QLatin1String("src")) {
+                // Only a picture's: its own (cid:), in the message (data:image), or on the internet (counted).
+                const QString src = a.second.trimmed();
+                const QString lower = src.toLower();
+                if (!img)
+                    continue;
+                if (isRemote(src)) {
                     ++r.remotePictures;
+                } else if (!lower.startsWith(QLatin1String("cid:")) && !lower.startsWith(QLatin1String("data:image/"))) {
+                    continue;
+                }
+                hasSource = true;
+                kept += QStringLiteral(" src=\"") + attributeText(src) + QLatin1Char('"');
                 continue;
             }
+            if (a.first == QLatin1String("background")) { // a table's picture
+                if (isRemote(a.second))
+                    ++r.remotePictures;
+                else if (!a.second.trimmed().toLower().startsWith(QLatin1String("cid:")))
+                    continue;
+            }
+            if (a.first == QLatin1String("style"))
+                r.remotePictures += remoteUrls(a.second);
             kept += QLatin1Char(' ') + a.first + QStringLiteral("=\"") + attributeText(a.second) + QLatin1Char('"');
         }
+        if (img && !hasSource)
+            continue; // nothing to show
         out += kept + QLatin1Char('>');
     }
     r.html = out;

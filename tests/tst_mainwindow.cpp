@@ -2,6 +2,7 @@
 #include "ComposeWindow.h"
 #include "FakeServers.h"
 #include "FolderTree.h"
+#include "MailWebView.h"
 #include "MainWindow.h"
 #include "MessageList.h"
 #include "MessageView.h"
@@ -17,6 +18,9 @@
 #include <QTabBar>
 #include <QTest>
 #include <QTreeWidget>
+
+// Before the application (MAIL_TEST_MAIN makes it): WebEngine's scheme; no GPU offscreen.
+static const bool webEnginePrepared = (qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu"), MailWebView::prepare(), true);
 
 class TestMainWindow : public QObject
 {
@@ -54,8 +58,9 @@ private slots:
 
         window.list()->setCurrentIndex(window.list()->model()->index(0, 0));
         QTRY_VERIFY(window.view()->hasMessage());
-        QVERIFY(window.view()->shownText().contains(QStringLiteral("Shall we eat at one?")));
+        QTRY_VERIFY_WITH_TIMEOUT(window.view()->shownText().contains(QStringLiteral("Shall we eat at one?")), 10000);
         QVERIFY(!window.view()->shownText().contains(QStringLiteral("bad()")));
+        QVERIFY(!window.view()->picturesShown()); // the tracker's picture waits for a click
         QTRY_VERIFY(imap.find("INBOX", 1)->flags.contains(QStringLiteral("\\Seen")));
         if (qEnvironmentVariableIsSet("MAIL_TEST_GRAB")) { // a picture, to look at
             window.resize(1200, 760);

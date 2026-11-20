@@ -3,27 +3,12 @@
 #include "Mime.h"
 #include "Theme.h"
 
-#include <QTextBrowser>
 #include <QWidget>
 
-class QLabel;
+class MailWebView;
 class QHBoxLayout;
-
-// What a message's HTML may load: its own pictures (cid:) and nothing else.
-class MailBrowser : public QTextBrowser
-{
-    Q_OBJECT
-
-public:
-    explicit MailBrowser(QWidget *parent = nullptr);
-    void setMessage(const Mime::Message *message) { m_message = message; }
-
-protected:
-    QVariant loadResource(int type, const QUrl &name) override;
-
-private:
-    const Mime::Message *m_message = nullptr;
-};
+class QLabel;
+class QPushButton;
 
 // One message: who, when, the subject, its text (the HTML made safe, else
 // the plain text), and its attachments, each saved with a click.
@@ -39,10 +24,13 @@ public:
     void applyTheme(const Theme &theme);
     const Mime::Message &message() const { return m_message; }
     bool hasMessage() const { return m_hasMessage; }
-    QString shownText() const; // for tests
+    QString shownText() const; // for tests: the text shown, once it is there
+    bool picturesShown() const; // from the internet, after "Show pictures"
+    MailWebView *body() const { return m_body; }
 
 private:
     void saveAttachment(int index);
+    void showBody(bool remotePictures);
 
     Mime::Message m_message;
     bool m_hasMessage = false;
@@ -51,9 +39,11 @@ private:
     QLabel *m_from = nullptr;
     QLabel *m_to = nullptr;
     QLabel *m_date = nullptr;
+    QWidget *m_noteBar = nullptr; // "3 pictures from the internet weren't loaded"  [Show pictures]
     QLabel *m_note = nullptr;
+    QPushButton *m_showPictures = nullptr;
     QWidget *m_files = nullptr;
     QHBoxLayout *m_filesLayout = nullptr;
-    MailBrowser *m_body = nullptr;
+    MailWebView *m_body = nullptr;
     Theme m_theme;
 };

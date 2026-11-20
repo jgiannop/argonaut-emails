@@ -1,12 +1,12 @@
 #include "MessageView.h"
 
+#include "MailWebView.h"
 #include "SafeHtml.h"
 
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
 #include <QHBoxLayout>
-#include <QImage>
 #include <QLabel>
 #include <QLocale>
 #include <QMessageBox>
@@ -32,31 +32,6 @@ QString people(const QList<Mime::Address> &list)
 }
 
 } // namespace
-
-MailBrowser::MailBrowser(QWidget *parent)
-    : QTextBrowser(parent)
-{
-    setOpenLinks(false);
-    setOpenExternalLinks(false);
-}
-
-QVariant MailBrowser::loadResource(int type, const QUrl &name)
-{
-    // Only the message's own pictures; nothing from the internet, no files.
-    if (type == QTextDocument::ImageResource && m_message && name.scheme() == QLatin1String("cid")) {
-        const Mime::Part *part = m_message->partById(name.path().toLatin1());
-        if (part && part->type.startsWith("image/")) {
-            QImage image = QImage::fromData(part->body);
-            if (!image.isNull()) {
-                const int width = qMax(100, viewport()->width() - 40);
-                if (image.width() > width)
-                    image = image.scaledToWidth(width, Qt::SmoothTransformation);
-                return image;
-            }
-        }
-    }
-    return {};
-}
 
 MessageView::MessageView(QWidget *parent)
     : QWidget(parent)
@@ -94,19 +69,25 @@ MessageView::MessageView(QWidget *parent)
     head->addWidget(m_date);
     layout->addWidget(m_header);
 
-    m_note = new QLabel(this);
+    m_noteBar = new QWidget(this);
+    m_noteBar->setObjectName(QStringLiteral("messageNoteBar"));
+    auto *noteLayout = new QHBoxLayout(m_noteBar);
+    noteLayout->setContentsMargins(16, 4, 12, 4);
+    m_note = new QLabel(m_noteBar);
     m_note->setObjectName(QStringLiteral("messageNote"));
     m_note->setTextFormat(Qt::PlainText);
-    m_note->setContentsMargins(16, 6, 16, 6);
     m_note->setWordWrap(true);
-    m_note->hide();
-    layout->addWidget(m_note);
+    m_showPictures = new QPushButton(tr("Show Pictures"), m_noteBar);
+    m_showPictures->setToolTip(tr("Load this message's pictures from the internet (the sender may learn that you read it)"));
+    connect(m_showPictures, &QPushButton::clicked, this, [this] { showBody(true); });
+    noteLayout->addWidget(m_note, 1);
+    noteLayout->addWidget(m_showPictures);
+    m_noteBar->hide();
+    layout->addWidget(m_noteBar);
 
-    m_body = new MailBrowser(this);
+    m_body = new MailWebView(this);
     m_body->setObjectName(QStringLiteral("messageBody"));
-    m_body->setFrameShape(QFrame::NoFrame);
-    m_body->document()->setDocumentMargin(16);
-    connect(m_body, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
+    connect(m_body, &MailWebView::linkClicked, this, [this](const QUrl &url) {
         // A link opens only after the user saw where it really goes.
         const QString scheme = url.scheme().toLower();
         if (scheme != QLatin1String("http") && scheme != QLatin1String("https") && scheme != QLatin1String("mailto"))
@@ -132,20 +113,17 @@ MessageView::MessageView(QWidget *parent)
 void MessageView::showNote(const QString &text)
 {
     m_hasMessage = false;
+    m_body->showNote(text); // first: the page lets go of the message
     m_message = Mime::Message();
-    m_body->setMessage(nullptr);
     m_header->hide();
     m_files->hide();
-    m_note->hide();
-    m_body->setPlainText(QString());
-    m_body->setHtml(QStringLiteral("<p align=\"center\" style=\"color:#888888\"><br><br>%1</p>").arg(text.toHtmlEscaped()));
+    m_noteBar->hide();
 }
 
 void MessageView::showMessage(const QByteArray &raw)
 {
     m_message = Mime::parse(raw);
     m_hasMessage = true;
-    m_body->setMessage(&m_message);
     m_subject->setText(m_message.subject().isEmpty() ? tr("(no subject)") : m_message.subject());
     m_from->setText(tr("From: %1").arg(people(m_message.from())));
     QString to = people(m_message.to());
@@ -158,20 +136,7 @@ void MessageView::showMessage(const QByteArray &raw)
     m_date->setText(date.isValid() ? QLocale().toString(date.toLocalTime(), QLocale::LongFormat) : QString());
     m_date->setVisible(date.isValid());
     m_header->show();
-
-    const QString html = m_message.html();
-    int remote = 0;
-    if (!html.isEmpty()) {
-        const SafeHtml::Result clean = SafeHtml::clean(html);
-        remote = clean.remotePictures;
-        m_body->setHtml(clean.html);
-    } else {
-        m_body->setHtml(SafeHtml::fromPlainText(m_message.plainText()));
-    }
-    m_note->setText(remote == 1   ? tr("A picture from the internet wasn't loaded: it would tell the sender that you read this.")
-                        : remote > 1 ? tr("%1 pictures from the internet weren't loaded: they would tell the sender that you read this.").arg(remote)
-                                     : QString());
-    m_note->setVisible(remote > 0);
+    showBody(false);
 
     while (QLayoutItem *item = m_filesLayout->takeAt(0)) {
         delete item->widget();
@@ -187,6 +152,25 @@ void MessageView::showMessage(const QByteArray &raw)
     }
     m_filesLayout->addStretch(1);
     m_files->setVisible(!files.isEmpty());
+}
+
+void MessageView::showBody(bool remotePictures)
+{
+    if (!m_hasMessage)
+        return;
+    const QString html = m_message.html();
+    int remote = 0;
+    if (!html.isEmpty()) {
+        const SafeHtml::Result clean = SafeHtml::clean(html);
+        remote = clean.remotePictures;
+        m_body->showHtml(clean.html, &m_message, remotePictures, false);
+    } else {
+        m_body->showHtml(SafeHtml::fromPlainText(m_message.plainText()), &m_message, false, true);
+    }
+    m_note->setText(remote == 1   ? tr("A picture from the internet wasn't loaded: it would tell the sender that you read this.")
+                        : remote > 1 ? tr("%1 pictures from the internet weren't loaded: they would tell the sender that you read this.").arg(remote)
+                                     : QString());
+    m_noteBar->setVisible(remote > 0 && !remotePictures);
 }
 
 void MessageView::saveAttachment(int index)
@@ -210,9 +194,15 @@ void MessageView::saveAttachment(int index)
 void MessageView::applyTheme(const Theme &theme)
 {
     m_theme = theme;
+    m_body->setColors(theme.window, theme.fg);
 }
 
 QString MessageView::shownText() const
 {
-    return m_body->toPlainText();
+    return m_body->shownText();
+}
+
+bool MessageView::picturesShown() const
+{
+    return m_hasMessage && m_body->remotePicturesAllowed();
 }

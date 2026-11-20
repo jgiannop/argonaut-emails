@@ -1,4 +1,5 @@
 #include "MailStore.h"
+#include "MailWebView.h"
 #include "MainWindow.h"
 #include "Theme.h"
 
@@ -6,6 +7,7 @@
 
 int main(int argc, char **argv)
 {
+    MailWebView::prepare(); // before the application
     QApplication app(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("Argonaut"));
     QApplication::setApplicationName(QStringLiteral("argonaut-emails"));

@@ -14,11 +14,16 @@ Version 0.1.0: the first working version.
   Keyring, KWallet), never in a settings file.
 - **Three panes**: accounts and folders, the folder's messages (newest first,
   unread in bold, ★ for starred), and the message under them.
-- **Reading**: HTML messages are shown without scripts, styles from the
-  internet or pictures from the internet (those tell the sender when and
-  where a message was read; the window says how many were left out).
-  Pictures sent inside the message are shown. Attachments are saved with a
-  click. A link opens only after you've seen where it really goes.
+- **Reading**: messages look as their sender made them, as in Gmail: they
+  are shown by Chromium (Qt WebEngine), locked so that a message can only be
+  looked at: no scripts, nothing from the network, and its own pictures only.
+  Pictures from the internet (they tell the sender when and where a message
+  was read) load only when you click **Show Pictures** on that message.
+  Attachments are saved with a click. A link opens in your browser only
+  after you've seen where it really goes.
+- **Gmail**: the inbox has Gmail's tabs (Primary, Promotions, Social,
+  Updates, Forums), with the same messages in each as in Gmail; All Mail,
+  Sent Mail, Drafts, Spam and Trash are at the top of the folders.
 - **Writing**: new messages, Reply, Reply All and Forward (with the
   attachments), Cc and Bcc, attachments up to 25 MB. A copy goes to Sent.
 - **Keeping things in sync**: messages read, starred or deleted here are
@@ -36,12 +41,12 @@ Version 0.1.0: the first working version.
   unencrypted connection is allowed only to this computer.
 - Nothing a message contains can add mail headers or SMTP commands: line
   breaks in names and subjects are removed, and addresses are checked.
-- The mail kept on this computer (`~/.local/share/argonaut-emails/mail.sqlite`)
+- The mail kept on this computer (`~/.local/share/Argonaut/argonaut-emails/mail.sqlite`)
   can be read only by you.
 
 ## Building
 
-Dependencies (Ubuntu 24.04): `cmake ninja-build qt6-base-dev libqt6sql6-sqlite`.
+Dependencies (Ubuntu 24.04): `cmake ninja-build qt6-base-dev qt6-webengine-dev libqt6sql6-sqlite`.
 
 ```bash
 cmake --preset debug

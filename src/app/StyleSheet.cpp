@@ -3,7 +3,7 @@
 QString styleSheetFor(const Theme &t)
 {
     QString css = QStringLiteral(R"(
-QMainWindow, QWidget#messageView, QTreeView#messageList, QTextBrowser#messageBody { background: @window; color: @fg; }
+QMainWindow, QWidget#messageView, QTreeView#messageList { background: @window; color: @fg; }
 QTreeWidget#folderTree { background: @sidebar; color: @fg; border: none; padding: 6px 4px; outline: 0; show-decoration-selected: 0; }
 QTreeWidget#folderTree::branch, QTreeWidget#folderTree::branch:selected { background: @sidebar; border: none; }
 QTreeWidget#folderTree::item { padding: 4px 4px; border-radius: 6px; }
@@ -15,7 +15,8 @@ QTreeView#messageList::item:selected { background: @itemSelected; color: @fg; }
 QTreeView#messageList::item:hover:!selected { background: @hover; }
 QHeaderView::section { background: @window; color: @dimFg; border: none; border-bottom: 1px solid @border; padding: 4px 6px; }
 QWidget#messageHeader { background: @sidebar; border-bottom: 1px solid @border; }
-QLabel#messageNote { background: @pathBg; color: @dimFg; }
+QWidget#messageNoteBar { background: @pathBg; }
+QLabel#messageNote { color: @dimFg; }
 QWidget#messageFiles { background: @sidebar; border-top: 1px solid @border; }
 QLineEdit#searchField { background: @pathBg; border: none; border-radius: 8px; padding: 6px 8px; margin: 6px; color: @fg; }
 QTabBar#categoryTabs { background: @window; border: none; }

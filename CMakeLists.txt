@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # 6.4 is what Ubuntu 24.04 ships, as for Argonaut.
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network Sql)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network Sql WebEngineWidgets)
 find_package(Qt6 6.4 QUIET COMPONENTS DBus)
 qt_standard_project_setup()
 
@@ -41,6 +41,7 @@ qt_add_library(mail_app STATIC
     src/app/AccountDialog.cpp src/app/AccountDialog.h
     src/app/ComposeWindow.cpp src/app/ComposeWindow.h
     src/app/FolderTree.cpp src/app/FolderTree.h
+    src/app/MailWebView.cpp src/app/MailWebView.h
     src/app/MainWindow.cpp src/app/MainWindow.h
     src/app/MessageList.cpp src/app/MessageList.h
     src/app/MessageView.cpp src/app/MessageView.h
@@ -48,7 +49,8 @@ qt_add_library(mail_app STATIC
     src/app/Theme.cpp src/app/Theme.h
 )
 target_include_directories(mail_app PUBLIC src/app)
-target_link_libraries(mail_app PUBLIC mail_core Qt6::Widgets)
+# Messages are shown by Chromium (Qt WebEngine), locked: see MailWebView.h.
+target_link_libraries(mail_app PUBLIC mail_core Qt6::Widgets Qt6::WebEngineWidgets)
 
 qt_add_executable(argonaut-emails src/app/main.cpp)
 target_link_libraries(argonaut-emails PRIVATE mail_app)
