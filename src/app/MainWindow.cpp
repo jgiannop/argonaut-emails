@@ -16,6 +16,7 @@
 #include <QCloseEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSettings>
@@ -67,6 +68,25 @@ MainWindow::MainWindow(MailStore *store, QWidget *parent)
     buildToolBar();
 
     connect(m_folders, &FolderTree::folderChosen, this, &MainWindow::showFolder);
+    connect(m_folders, &FolderTree::accountChosen, this, [this] {
+        m_list->setFolder(QString(), QByteArray(), false);
+        m_view->showNote(tr("Choose a folder. File → Account Settings… changes this account (its password too)."));
+        updateActions();
+    });
+    // Right-click on an account or its folders: its settings.
+    m_folders->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_folders, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_folders->itemAt(pos);
+        if (!item)
+            return;
+        m_folders->setCurrentItem(item);
+        QMenu menu(this);
+        menu.addAction(m_getAct);
+        menu.addSeparator();
+        menu.addAction(m_editAccountAct);
+        menu.addAction(m_removeAccountAct);
+        menu.exec(m_folders->viewport()->mapToGlobal(pos));
+    });
     connect(m_list, &MessageList::messageChosen, this, &MainWindow::showMessage);
     connect(m_list->messages(), &QAbstractItemModel::modelReset, this, &MainWindow::updateActions);
 
@@ -211,7 +231,9 @@ void MainWindow::addSync(Sync *sync)
     sync->setParent(this);
     m_syncs.insert(id, sync);
     connect(sync, &Sync::status, this, [this](const QString &text) { m_status->setText(text); });
-    connect(sync, &Sync::error, this, [this](const QString &text) { statusBar()->showMessage(text, 15000); });
+    connect(sync, &Sync::error, this, [this](const QString &text) {
+        statusBar()->showMessage(text + tr("  (File → Account Settings… to change it)"), 30000);
+    });
     sync->start();
 }
 
@@ -365,9 +387,18 @@ void MainWindow::addAccount()
     m_view->showNote(tr("Choose a message to read it."));
 }
 
+QString MainWindow::chosenAccount() const
+{
+    const QString id = m_folders->currentAccount();
+    if (!id.isEmpty())
+        return id;
+    const QList<Account> all = Account::all();
+    return all.size() == 1 ? all.first().id : QString();
+}
+
 void MainWindow::editAccount()
 {
-    const Account a = Account::byId(m_folders->currentAccount());
+    const Account a = Account::byId(chosenAccount());
     if (!a.isValid())
         return;
     AccountDialog dialog(a, this);
@@ -379,7 +410,7 @@ void MainWindow::editAccount()
 
 void MainWindow::removeAccount()
 {
-    const Account a = Account::byId(m_folders->currentAccount());
+    const Account a = Account::byId(chosenAccount());
     if (!a.isValid())
         return;
     if (QMessageBox::question(this, tr("Remove Account"),
@@ -409,7 +440,7 @@ void MainWindow::updateActions()
     m_starAct->setEnabled(chosen);
     m_readAct->setText(chosen && !s.seen ? tr("Mark as Read") : tr("Mark as Unread"));
     m_starAct->setText(chosen && s.flagged ? tr("Remove Star") : tr("Star"));
-    const bool account = !m_folders->currentAccount().isEmpty();
+    const bool account = !chosenAccount().isEmpty();
     m_editAccountAct->setEnabled(account);
     m_removeAccountAct->setEnabled(account);
 }

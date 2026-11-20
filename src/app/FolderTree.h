@@ -24,6 +24,7 @@ public:
 
 signals:
     void folderChosen(const QString &account, const QByteArray &path);
+    void accountChosen(const QString &account); // its own row
 
 private:
     void updateCounts(const QString &account);

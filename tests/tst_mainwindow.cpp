@@ -10,6 +10,7 @@
 #include "TestSupport.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -91,6 +92,37 @@ private slots:
         QCOMPARE(smtp.to, QList<QByteArray>{"<john@example.org>"});
         QTRY_COMPARE_WITH_TIMEOUT(imap.boxes["Sent"].mails.size(), 1, 10000);
         QTRY_VERIFY(imap.find("INBOX", 1)->flags.contains(QStringLiteral("\\Answered")));
+    }
+
+    void wrongPasswordCanBeFixed()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        FakeImap imap;
+        Account a;
+        a.email = QStringLiteral("maria@example.com");
+        a.imapHost = QStringLiteral("127.0.0.1");
+        a.imapPort = imap.port();
+        a.imapSecurity = ImapClient::Security::None;
+        a.smtpHost = QStringLiteral("127.0.0.1");
+        Account::save(a);
+        QVERIFY(Passwords::save(a.id, QStringLiteral("imap"), QStringLiteral("wrong"), a.email));
+        MailStore store(QDir::homePath() + QStringLiteral("/wrong.sqlite"));
+        MainWindow window(&store);
+        window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.syncFor(a.id)->isBusy(), 10000);
+        QVERIFY(store.folders(a.id).isEmpty()); // never logged in
+        QAction *settings = nullptr;
+        for (QAction *action : window.actions()) {
+            if (action->text() == QStringLiteral("Account Settings…"))
+                settings = action;
+        }
+        QVERIFY(settings);
+        QVERIFY(settings->isEnabled()); // the one account, though nothing is chosen
+        // Its row can be chosen too.
+        window.folders()->setCurrentItem(window.folders()->topLevelItem(0));
+        QCOMPARE(window.folders()->currentAccount(), a.id);
+        QVERIFY(settings->isEnabled());
     }
 };
 

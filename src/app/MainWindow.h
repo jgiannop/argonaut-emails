@@ -58,6 +58,7 @@ private:
     void editAccount();
     void removeAccount();
     void updateActions();
+    QString chosenAccount() const; // the one chosen in the tree, else the only one
     void applyTheme();
     void loadSettings();
     void saveSettings();

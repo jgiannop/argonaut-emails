@@ -45,6 +45,8 @@ FolderTree::FolderTree(MailStore *store, QWidget *parent)
         const QByteArray path = item->data(0, PathRole).toByteArray();
         if (!path.isEmpty())
             emit folderChosen(item->data(0, AccountRole).toString(), path);
+        else
+            emit accountChosen(item->data(0, AccountRole).toString());
     });
     connect(store, &MailStore::foldersChanged, this, [this] { reload(); });
     connect(store, &MailStore::folderChanged, this, [this](const QString &account) { updateCounts(account); });
@@ -60,7 +62,7 @@ void FolderTree::reload()
         auto *top = new QTreeWidgetItem(this);
         top->setText(0, a.title());
         top->setData(0, AccountRole, a.id);
-        top->setFlags(Qt::ItemIsEnabled);
+        top->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable); // to reach its settings, folders or not
         QFont bold = font();
         bold.setBold(true);
         top->setFont(0, bold);
