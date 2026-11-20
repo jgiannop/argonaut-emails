@@ -64,6 +64,8 @@ void MailStore::createTables()
         hasCategory = hasCategory || q.value(1).toString() == QLatin1String("category");
     if (!hasCategory)
         q.exec(QStringLiteral("ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT ''"));
+    // The column holds a list, ",primary,updates,"; the first builds kept one tab, "updates": made a list.
+    q.exec(QStringLiteral("UPDATE messages SET category = ',' || category || ',' WHERE category <> '' AND category NOT LIKE ',%'"));
 }
 
 void MailStore::setFolders(const QString &account, const QList<Folder> &folders)
@@ -246,7 +248,7 @@ MailStore::Summary summaryFrom(const QSqlQuery &q)
     s.flagged = q.value(11).toInt() != 0;
     s.answered = q.value(12).toInt() != 0;
     s.attachments = q.value(13).toInt() != 0;
-    s.category = q.value(14).toString();
+    s.categories = q.value(14).toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
     return s;
 }
 
@@ -261,15 +263,32 @@ QStringList MailStore::categories()
             QStringLiteral("forums")};
 }
 
+namespace {
+
+// The WHERE part that picks one tab's messages, and its value.
+QString categoryClause(const QString &category)
+{
+    if (category == QLatin1String("primary"))
+        return QStringLiteral(" AND (category = '' OR category LIKE '%,primary,%')");
+    return QStringLiteral(" AND category LIKE ?");
+}
+
+QString categoryPattern(const QString &category)
+{
+    return QStringLiteral("%,") + category + QStringLiteral(",%");
+}
+
+} // namespace
+
 QList<MailStore::Summary> MailStore::messages(const QString &account, const QByteArray &path, int limit, const QString &category) const
 {
     QSqlQuery q(m_db);
     q.prepare(QStringLiteral("SELECT %1 FROM messages WHERE account = ? AND folder = ?%2 ORDER BY date DESC, uid DESC LIMIT ?")
-                  .arg(QLatin1String(kSummaryColumns), category.isEmpty() ? QString() : QStringLiteral(" AND category = ?")));
+                  .arg(QLatin1String(kSummaryColumns), category.isEmpty() ? QString() : categoryClause(category)));
     q.addBindValue(account);
     q.addBindValue(path);
-    if (!category.isEmpty())
-        q.addBindValue(category == QLatin1String("primary") ? QString(QLatin1String("")) : category);
+    if (!category.isEmpty() && category != QLatin1String("primary"))
+        q.addBindValue(categoryPattern(category));
     q.addBindValue(limit);
     q.exec();
     QList<Summary> out;
@@ -278,7 +297,7 @@ QList<MailStore::Summary> MailStore::messages(const QString &account, const QByt
     return out;
 }
 
-void MailStore::setCategories(const QString &account, const QByteArray &path, const QHash<qint64, QString> &categories)
+void MailStore::setCategories(const QString &account, const QByteArray &path, const QHash<qint64, QStringList> &categories)
 {
     QSqlQuery q(m_db);
     q.prepare(QStringLiteral("SELECT uid, category FROM messages WHERE account = ? AND folder = ?"));
@@ -288,7 +307,9 @@ void MailStore::setCategories(const QString &account, const QByteArray &path, co
     QList<QPair<qint64, QString>> changes;
     while (q.next()) {
         const qint64 uid = q.value(0).toLongLong();
-        const QString now = categories.value(uid);
+        QStringList tabs = categories.value(uid);
+        tabs.sort();
+        const QString now = tabs.isEmpty() ? QString(QLatin1String("")) : QLatin1Char(',') + tabs.join(QLatin1Char(',')) + QLatin1Char(',');
         if (q.value(1).toString() != now)
             changes.append({uid, now});
     }
@@ -298,7 +319,7 @@ void MailStore::setCategories(const QString &account, const QByteArray &path, co
     for (const auto &c : std::as_const(changes)) {
         QSqlQuery u(m_db);
         u.prepare(QStringLiteral("UPDATE messages SET category = ? WHERE account = ? AND folder = ? AND uid = ?"));
-        u.addBindValue(c.second.isNull() ? QString(QLatin1String("")) : c.second);
+        u.addBindValue(c.second);
         u.addBindValue(account);
         u.addBindValue(path);
         u.addBindValue(c.first);
@@ -310,20 +331,28 @@ void MailStore::setCategories(const QString &account, const QByteArray &path, co
 
 QHash<QString, QPair<int, int>> MailStore::categoryCounts(const QString &account, const QByteArray &path) const
 {
-    QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT category, count(*), sum(seen = 0) FROM messages WHERE account = ? AND folder = ? GROUP BY category"));
-    q.addBindValue(account);
-    q.addBindValue(path);
-    q.exec();
-    QHash<QString, QPair<int, int>> out;
-    bool any = false;
-    while (q.next()) {
-        const QString category = q.value(0).toString();
-        any = any || !category.isEmpty();
-        out.insert(category.isEmpty() ? QStringLiteral("primary") : category, {q.value(1).toInt(), q.value(2).toInt()});
+    {
+        QSqlQuery any(m_db);
+        any.prepare(QStringLiteral("SELECT 1 FROM messages WHERE account = ? AND folder = ? AND category <> '' LIMIT 1"));
+        any.addBindValue(account);
+        any.addBindValue(path);
+        any.exec();
+        if (!any.next())
+            return {}; // not Gmail's inbox, or not known yet
     }
-    if (!any)
-        return {};
+    QHash<QString, QPair<int, int>> out;
+    for (const QString &category : categories()) {
+        QSqlQuery q(m_db);
+        q.prepare(QStringLiteral("SELECT count(*), coalesce(sum(seen = 0), 0) FROM messages WHERE account = ? AND folder = ?")
+                  + categoryClause(category));
+        q.addBindValue(account);
+        q.addBindValue(path);
+        if (category != QLatin1String("primary"))
+            q.addBindValue(categoryPattern(category));
+        q.exec();
+        if (q.next())
+            out.insert(category, {q.value(0).toInt(), q.value(1).toInt()});
+    }
     return out;
 }
 

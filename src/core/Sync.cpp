@@ -386,15 +386,14 @@ void Sync::readFolder(const QByteArray &path, std::function<void()> then)
 
 void Sync::readCategories(const QByteArray &path, std::function<void()> next)
 {
-    readCategory(path, 0, std::make_shared<QHash<qint64, QString>>(), next);
+    readCategory(path, 0, std::make_shared<QHash<qint64, QStringList>>(), next);
 }
 
-// One search per tab other than Primary, one after the other; a failed one leaves what was known.
-void Sync::readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QString>> found, std::function<void()> next)
+// One search per tab, one after the other; a failed one leaves what was known.
+// Primary too: Gmail shows some messages in two tabs (an important one of Updates also in Primary).
+void Sync::readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QStringList>> found, std::function<void()> next)
 {
     const QStringList categories = MailStore::categories();
-    if (i == 0) // "primary": what no search finds
-        ++i;
     if (i >= categories.size()) {
         m_store->setCategories(m_account.id, path, *found);
         next();
@@ -413,7 +412,7 @@ void Sync::readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qin
                              for (qsizetype k = 1; k < u.values.size(); ++k) {
                                  const qint64 uid = u.values.at(k).text.toLongLong();
                                  if (uid > 0)
-                                     found->insert(uid, category);
+                                     (*found)[uid].append(category);
                              }
                          }
                          readCategory(path, i + 1, found, next);

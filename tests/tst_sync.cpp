@@ -239,15 +239,17 @@ private slots:
         server.add("INBOX", mail(4));
         server.boxes["INBOX"].mails[1].category = "promotions";
         server.boxes["INBOX"].mails[2].category = "updates";
-        server.boxes["INBOX"].mails[3].category = "updates";
+        server.boxes["INBOX"].mails[3].category = "updates,primary"; // Gmail shows it in both
         MailStore store(QDir::homePath() + QStringLiteral("/tabs.sqlite"));
         Sync sync(account(), &store);
         sync.setSettings(settingsFor(server));
         sync.start();
         waitIdle(sync);
+        QVERIFY(server.loggedCommand("UID SEARCH X-GM-RAW \"category:primary\""));
         QVERIFY(server.loggedCommand("UID SEARCH X-GM-RAW \"category:promotions\""));
         QVERIFY(server.loggedCommand("UID SEARCH X-GM-RAW \"category:forums\""));
-        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).size(), 1);
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).size(), 2); // 1 (no tab) and 4 (both)
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).first().uid, 4);
         QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("promotions")).first().uid, 2);
         QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("updates")).size(), 2);
 
@@ -257,8 +259,9 @@ private slots:
         server.boxes["INBOX"].mails[3].category.clear();
         sync.syncFolder("INBOX");
         waitIdle(sync);
-        QCOMPARE(store.summary(account().id, "INBOX", 5).category, QStringLiteral("social"));
-        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).size(), 2);
+        QCOMPARE(store.summary(account().id, "INBOX", 5).categories, QStringList{QStringLiteral("social")});
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).size(), 2); // 1 and 4
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("updates")).size(), 1); // 3
 
         // Only the inbox has tabs.
         server.log.clear();

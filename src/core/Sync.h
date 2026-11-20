@@ -74,7 +74,7 @@ private:
     void readFolder(const QByteArray &path, std::function<void()> next);
     // Gmail: which of the inbox's messages are in which tab (X-GM-RAW "category:…").
     void readCategories(const QByteArray &path, std::function<void()> next);
-    void readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QString>> found, std::function<void()> next);
+    void readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QStringList>> found, std::function<void()> next);
     void storeFlag(const QByteArray &path, qint64 uid, const QByteArray &flag, bool on);
 
     Account m_account;

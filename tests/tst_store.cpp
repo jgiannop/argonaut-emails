@@ -28,12 +28,17 @@ private slots:
                                           " message_id BLOB, size INTEGER, seen INTEGER, flagged INTEGER, answered INTEGER,"
                                           " attachments INTEGER, body BLOB, PRIMARY KEY (account, folder, uid))")));
             QVERIFY(q.exec(QStringLiteral("INSERT INTO messages (account, folder, uid, subject, date, seen) VALUES ('a1', X'494E424F58', 1, 'old', 1, 1)")));
+            QVERIFY(q.exec(QStringLiteral("INSERT INTO messages (account, folder, uid, subject, date, seen) VALUES ('a1', X'53656E74', 1, 'sent', 1, 1)")));
+            // A store of the first 0.2 build: one tab, no list.
+            QVERIFY(q.exec(QStringLiteral("ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT ''")));
+            QVERIFY(q.exec(QStringLiteral("UPDATE messages SET category = 'updates' WHERE subject = 'sent'")));
             db.close();
         }
         QSqlDatabase::removeDatabase(QStringLiteral("old"));
 
         MailStore store(file);
         QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX").size(), 1);
+        QCOMPARE(store.messages(QStringLiteral("a1"), "Sent", 100, QStringLiteral("updates")).size(), 1); // made a list
         QVERIFY(store.categoryCounts(QStringLiteral("a1"), "INBOX").isEmpty()); // no tabs until Gmail says
         QList<MailStore::Summary> list;
         for (int uid = 2; uid <= 4; ++uid) {
@@ -46,21 +51,30 @@ private slots:
         }
         store.addSummaries(list);
         QSignalSpy changed(&store, &MailStore::folderChanged);
-        store.setCategories(QStringLiteral("a1"), "INBOX", {{2, QStringLiteral("promotions")}, {3, QStringLiteral("promotions")}});
+        const QString primary = QStringLiteral("primary"), promotions = QStringLiteral("promotions"), updates = QStringLiteral("updates");
+        // 2 in Promotions; 3 in Updates and Primary both (as Gmail shows an important one); 1 and 4 in no tab.
+        const QHash<qint64, QStringList> tabs{{2, {promotions}}, {3, {updates, primary}}};
+        store.setCategories(QStringLiteral("a1"), "INBOX", tabs);
         QCOMPARE(changed.size(), 1);
-        QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX", 100, QStringLiteral("primary")).size(), 2); // 1 and 4
-        QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX", 100, QStringLiteral("promotions")).size(), 2);
+        QList<qint64> inPrimary;
+        for (const MailStore::Summary &s : store.messages(QStringLiteral("a1"), "INBOX", 100, primary))
+            inPrimary.append(s.uid);
+        QCOMPARE(inPrimary, (QList<qint64>{4, 3, 1}));
+        QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX", 100, promotions).size(), 1);
+        QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX", 100, updates).size(), 1);
         QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX").size(), 4);
         const auto counts = store.categoryCounts(QStringLiteral("a1"), "INBOX");
-        QCOMPARE(counts.value(QStringLiteral("primary")), qMakePair(2, 1));
-        QCOMPARE(counts.value(QStringLiteral("promotions")), qMakePair(2, 2));
-        QCOMPARE(store.summary(QStringLiteral("a1"), "INBOX", 2).category, QStringLiteral("promotions"));
+        QCOMPARE(counts.value(primary), qMakePair(3, 2));
+        QCOMPARE(counts.value(promotions), qMakePair(1, 1));
+        QCOMPARE(counts.value(updates), qMakePair(1, 1));
+        QCOMPARE(counts.value(QStringLiteral("social")), qMakePair(0, 0));
+        QCOMPARE(store.summary(QStringLiteral("a1"), "INBOX", 3).categories, (QStringList{primary, updates}));
         // The same again: nothing to say, the list isn't made again.
-        store.setCategories(QStringLiteral("a1"), "INBOX", {{2, QStringLiteral("promotions")}, {3, QStringLiteral("promotions")}});
+        store.setCategories(QStringLiteral("a1"), "INBOX", tabs);
         QCOMPARE(changed.size(), 1);
-        // Moved to Primary in Gmail.
-        store.setCategories(QStringLiteral("a1"), "INBOX", {{3, QStringLiteral("promotions")}});
-        QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX", 100, QStringLiteral("primary")).size(), 3);
+        // Taken out of Promotions in Gmail: Primary.
+        store.setCategories(QStringLiteral("a1"), "INBOX", {{3, {updates, primary}}});
+        QCOMPARE(store.messages(QStringLiteral("a1"), "INBOX", 100, primary).size(), 4);
     }
 
     void keepsAndForgets()

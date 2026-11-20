@@ -47,7 +47,7 @@ public:
         bool flagged = false;
         bool answered = false;
         bool attachments = false; // a guess from the Content-Type: multipart/mixed
-        QString category;         // Gmail's inbox tab: "social", "promotions", "updates", "forums"; empty: Primary
+        QStringList categories;   // Gmail's inbox tabs it is in ("primary", "updates"… a message may be in two); none: Primary
     };
 
     // Gmail's inbox tabs, in its order. "primary" is every message of no other.
@@ -70,10 +70,10 @@ public:
     qint64 lowestUid(const QString &account, const QByteArray &path) const;
 
     void addSummaries(const QList<Summary> &summaries);
-    // `category` empty: all of them; "primary": those of no other tab.
+    // `category` empty: all of them; "primary": those Gmail put there and those of no tab.
     QList<Summary> messages(const QString &account, const QByteArray &path, int limit = 5000, const QString &category = QString()) const;
-    // Gmail's inbox tabs: uid → category for what the server put in one; the rest are Primary.
-    void setCategories(const QString &account, const QByteArray &path, const QHash<qint64, QString> &categories);
+    // Gmail's inbox tabs: uid → the tabs Gmail shows it in; a message in none is Primary.
+    void setCategories(const QString &account, const QByteArray &path, const QHash<qint64, QStringList> &categories);
     // Per tab ("primary" included): {messages, unread}. Empty when no message has a category.
     QHash<QString, QPair<int, int>> categoryCounts(const QString &account, const QByteArray &path) const;
     Summary summary(const QString &account, const QByteArray &path, qint64 uid) const;

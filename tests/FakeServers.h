@@ -17,7 +17,7 @@ public:
         qint64 uid = 0;
         QStringList flags;
         QByteArray raw;
-        QByteArray category; // Gmail's inbox tab ("social"…), for X-GM-RAW
+        QByteArray category; // Gmail's inbox tabs, for X-GM-RAW: "updates", "primary,updates"…
     };
     struct Box
     {
@@ -233,7 +233,7 @@ private:
             }
             QByteArray found = "* SEARCH";
             for (const Mail &m : boxes.value(c.selected).mails) {
-                if (m.category == query.mid(9))
+                if (m.category.split(',').contains(query.mid(9)))
                     found += ' ' + QByteArray::number(m.uid);
             }
             s->write(found + "\r\n");

@@ -106,8 +106,10 @@ private slots:
         imap.add("INBOX", "From: Anna <anna@example.org>\r\nSubject: Dinner\r\nDate: Tue, 1 Jul 2025 10:00:00 +0200\r\n\r\nhi\r\n");
         imap.add("INBOX", "From: Shop <shop@example.org>\r\nSubject: Sale\r\nDate: Tue, 1 Jul 2025 11:00:00 +0200\r\n\r\nbuy\r\n");
         imap.add("INBOX", "From: Bot <bot@example.org>\r\nSubject: Build failed\r\nDate: Tue, 1 Jul 2025 12:00:00 +0200\r\n\r\nred\r\n");
+        imap.add("INBOX", "From: Bank <bank@example.org>\r\nSubject: Security alert\r\nDate: Tue, 1 Jul 2025 09:00:00 +0200\r\n\r\n!\r\n");
         imap.boxes["INBOX"].mails[1].category = "promotions";
         imap.boxes["INBOX"].mails[2].category = "updates";
+        imap.boxes["INBOX"].mails[3].category = "updates,primary"; // Gmail shows it in both
         imap.boxes.remove("Sent");
         imap.boxes["[Gmail]"].role = "\\Noselect";
         imap.boxes["[Gmail]/Sent Mail"].role = "\\Sent";
@@ -127,10 +129,11 @@ private slots:
         // Primary, Promotions, Updates (no Social, no Forums: nothing there); Primary first, as in Gmail.
         QCOMPARE(window.tabs()->count(), 3);
         QCOMPARE(window.tabs()->currentIndex(), 0);
-        QCOMPARE(window.tabs()->tabText(0), QStringLiteral("Primary  (1)"));
-        QCOMPARE(window.tabs()->tabText(2), QStringLiteral("Updates  (1)"));
-        QCOMPARE(window.list()->messages()->rowCount(), 1);
+        QCOMPARE(window.tabs()->tabText(0), QStringLiteral("Primary  (2)"));
+        QCOMPARE(window.tabs()->tabText(2), QStringLiteral("Updates  (2)"));
+        QCOMPARE(window.list()->messages()->rowCount(), 2);
         QCOMPARE(window.list()->messages()->summaryAt(0).subject, QStringLiteral("Dinner"));
+        QCOMPARE(window.list()->messages()->summaryAt(1).subject, QStringLiteral("Security alert"));
         window.tabs()->setCurrentIndex(1);
         QCOMPARE(window.list()->messages()->rowCount(), 1);
         QCOMPARE(window.list()->messages()->summaryAt(0).subject, QStringLiteral("Sale"));
@@ -162,7 +165,7 @@ private slots:
         window.folders()->select(a.id, "INBOX");
         QVERIFY(window.tabs()->isVisible());
         QCOMPARE(window.tabs()->currentIndex(), 0);
-        QCOMPARE(window.list()->messages()->rowCount(), 1);
+        QCOMPARE(window.list()->messages()->rowCount(), 2);
     }
 
     void wrongPasswordCanBeFixed()
