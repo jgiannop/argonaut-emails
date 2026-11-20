@@ -1,0 +1,17 @@
+# Build output
+build/
+Testing/
+
+# Editor / IDE files
+.cache/
+compile_commands.json
+CMakeUserPresets.json
+CMakeLists.txt.user*
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Crash dumps
+core
+core.*

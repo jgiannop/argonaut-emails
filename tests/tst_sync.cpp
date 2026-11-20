@@ -1,0 +1,185 @@
+#include "FakeServers.h"
+#include "ImapClient.h"
+#include "MailStore.h"
+#include "Sync.h"
+#include "TestSupport.h"
+
+#include <QCoreApplication>
+#include <QDir>
+#include <QSignalSpy>
+#include <QTest>
+
+namespace {
+
+QByteArray mail(int n, const QByteArray &extra = {})
+{
+    return "From: =?UTF-8?Q?M=C3=A1ria?= <maria@example.com>\r\n"
+           "To: John <john@example.org>\r\n"
+           "Subject: Message " + QByteArray::number(n) + "\r\n"
+           "Date: Tue, 1 Jul 2025 10:0" + QByteArray::number(n % 10) + ":00 +0200\r\n"
+           "Message-ID: <m" + QByteArray::number(n) + "@example.com>\r\n" + extra +
+           "\r\n"
+           "Body of message " + QByteArray::number(n) + "\r\n";
+}
+
+} // namespace
+
+class TestSync : public QObject
+{
+    Q_OBJECT
+
+    Account account()
+    {
+        Account a;
+        a.id = QStringLiteral("11111111-2222-3333-4444-555555555555");
+        a.email = QStringLiteral("maria@example.com");
+        a.imapHost = QStringLiteral("127.0.0.1");
+        return a;
+    }
+    ImapClient::Settings settingsFor(const FakeImap &server)
+    {
+        ImapClient::Settings s;
+        s.host = QStringLiteral("127.0.0.1");
+        s.port = server.port();
+        s.security = ImapClient::Security::None;
+        s.user = server.user;
+        s.password = server.password;
+        return s;
+    }
+    void waitIdle(Sync &sync)
+    {
+        QTRY_VERIFY_WITH_TIMEOUT(!sync.isBusy(), 10000);
+    }
+
+private slots:
+    void clientLogsIn()
+    {
+        FakeImap server;
+        ImapClient client;
+        QSignalSpy ready(&client, &ImapClient::ready);
+        client.open(settingsFor(server));
+        QTRY_COMPARE(ready.size(), 1);
+        QVERIFY(server.loggedCommand("AUTHENTICATE PLAIN "));
+        QVERIFY(client.hasCapability("MOVE"));
+        // Without SASL-IR or AUTH=PLAIN: LOGIN with quoted words.
+        FakeImap old;
+        old.capabilities = "IMAP4rev1";
+        ImapClient second;
+        QSignalSpy secondReady(&second, &ImapClient::ready);
+        second.open(settingsFor(old));
+        QTRY_COMPARE(secondReady.size(), 1);
+        QVERIFY(old.loggedCommand("LOGIN \"maria@example.com\""));
+    }
+
+    void wrongPasswordIsSaid()
+    {
+        FakeImap server;
+        ImapClient client;
+        QSignalSpy failed(&client, &ImapClient::failed);
+        ImapClient::Settings s = settingsFor(server);
+        s.password = QStringLiteral("wrong");
+        client.open(s);
+        QTRY_COMPARE(failed.size(), 1);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("Invalid credentials")));
+    }
+
+    void neverInTheClearOverANetwork()
+    {
+        ImapClient client;
+        QSignalSpy failed(&client, &ImapClient::failed);
+        ImapClient::Settings s;
+        s.host = QStringLiteral("imap.example.com");
+        s.port = 143;
+        s.security = ImapClient::Security::None;
+        s.user = QStringLiteral("u");
+        s.password = QStringLiteral("p");
+        client.open(s);
+        QTRY_COMPARE(failed.size(), 1);
+    }
+
+    void foldersAndMessages()
+    {
+        FakeImap server;
+        for (int i = 1; i <= 3; ++i)
+            server.add("INBOX", mail(i), i == 1 ? QStringList{QStringLiteral("\\Seen")} : QStringList());
+        MailStore store(QDir::homePath() + QStringLiteral("/first.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.start();
+        waitIdle(sync);
+        const QList<MailStore::Folder> folders = store.folders(account().id);
+        QCOMPARE(folders.size(), 3);
+        QCOMPARE(folders.first().path, QByteArray("INBOX"));
+        QCOMPARE(store.folder(account().id, "Sent").role, QStringLiteral("sent"));
+        QList<MailStore::Summary> list = store.messages(account().id, "INBOX");
+        QCOMPARE(list.size(), 3);
+        QCOMPARE(list.first().subject, QStringLiteral("Message 3"));
+        QCOMPARE(list.first().fromName, QStringLiteral("Mária"));
+        QCOMPARE(store.folder(account().id, "INBOX").unread, 2);
+
+        // New mail: only it is fetched; and one read elsewhere.
+        server.add("INBOX", mail(4));
+        server.find("INBOX", 2)->flags.append(QStringLiteral("\\Seen"));
+        sync.syncFolder("INBOX");
+        waitIdle(sync);
+        list = store.messages(account().id, "INBOX");
+        QCOMPARE(list.size(), 4);
+        QVERIFY(store.summary(account().id, "INBOX", 2).seen);
+        QVERIFY(server.loggedCommand("UID FETCH 4:*"));
+
+        // Opening one: fetched once, then kept.
+        QByteArray raw;
+        sync.fetchBody("INBOX", 3, [&raw](const QByteArray &r, const QString &) { raw = r; });
+        waitIdle(sync);
+        QVERIFY(raw.contains("Body of message 3"));
+        server.log.clear();
+        sync.fetchBody("INBOX", 3, [&raw](const QByteArray &r, const QString &) { raw = r; });
+        QVERIFY(server.log.isEmpty());
+
+        // Read, starred, then to the Trash.
+        sync.setSeen("INBOX", 3, true);
+        sync.setFlagged("INBOX", 3, true);
+        waitIdle(sync);
+        QVERIFY(server.find("INBOX", 3)->flags.contains(QStringLiteral("\\Seen")));
+        QVERIFY(server.find("INBOX", 3)->flags.contains(QStringLiteral("\\Flagged")));
+        sync.moveToTrash("INBOX", 3);
+        waitIdle(sync);
+        QVERIFY(!server.find("INBOX", 3));
+        QCOMPARE(server.boxes["Trash"].mails.size(), 1);
+        QCOMPARE(store.messages(account().id, "Trash").size(), 1);
+
+        // Deleted elsewhere: gone here at the next look.
+        server.boxes["INBOX"].mails.removeFirst();
+        sync.syncFolder("INBOX");
+        waitIdle(sync);
+        QCOMPARE(store.messages(account().id, "INBOX").size(), 2);
+
+        // A copy of a sent message.
+        sync.keepSent("Subject: sent\r\n\r\nhello\r\n");
+        waitIdle(sync);
+        QCOMPARE(server.boxes["Sent"].mails.size(), 1);
+        QCOMPARE(server.boxes["Sent"].mails.first().raw, QByteArray("Subject: sent\r\n\r\nhello\r\n"));
+    }
+
+    void newUidValidityStartsAgain()
+    {
+        FakeImap server;
+        server.add("INBOX", mail(1));
+        MailStore store(QDir::homePath() + QStringLiteral("/second.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.start();
+        waitIdle(sync);
+        QCOMPARE(store.messages(account().id, "INBOX").size(), 1);
+        server.boxes["INBOX"].uidValidity = 99;
+        server.boxes["INBOX"].mails.first().raw = mail(9);
+        sync.syncFolder("INBOX");
+        waitIdle(sync);
+        const QList<MailStore::Summary> list = store.messages(account().id, "INBOX");
+        QCOMPARE(list.size(), 1);
+        QCOMPARE(list.first().subject, QStringLiteral("Message 9"));
+    }
+};
+
+MAIL_TEST_MAIN(TestSync, QCoreApplication)
+#include "tst_sync.moc"

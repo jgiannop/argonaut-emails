@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Argonaut Emails
+GenericName=Email Client
+Comment=Read and send email
+Exec=@MAIL_EXE@
+Icon=mail-client
+Terminal=false
+Categories=Network;Email;Qt;
+StartupWMClass=argonaut-emails
