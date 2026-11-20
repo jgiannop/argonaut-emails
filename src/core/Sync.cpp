@@ -3,6 +3,7 @@
 #include "Mime.h"
 
 #include <algorithm>
+#include <memory>
 
 namespace {
 
@@ -96,8 +97,9 @@ QDateTime internalDate(const QString &text)
 
 int roleOrder(const QString &role)
 {
-    static const QStringList order{QStringLiteral("inbox"), QStringLiteral("all"), QStringLiteral("drafts"), QStringLiteral("sent"),
-                                   QStringLiteral("archive"), QStringLiteral("junk"), QStringLiteral("trash")};
+    static const QStringList order{QStringLiteral("inbox"),   QStringLiteral("all"),  QStringLiteral("starred"),
+                                   QStringLiteral("sent"),    QStringLiteral("drafts"), QStringLiteral("archive"),
+                                   QStringLiteral("junk"),    QStringLiteral("trash")};
     const qsizetype i = order.indexOf(role);
     return i < 0 ? int(order.size()) : int(i);
 }
@@ -260,9 +262,9 @@ void Sync::listFolders(std::function<void()> next)
         }
         // The usual ones first, the rest as the server has them by name.
         std::stable_sort(folders.begin(), folders.end(), [](const MailStore::Folder &a, const MailStore::Folder &b) {
-            // All Mail goes next to the Inbox even inside "[Gmail]".
-            const bool aTop = !a.path.contains(a.delimiter) || a.role == QLatin1String("all");
-            const bool bTop = !b.path.contains(b.delimiter) || b.role == QLatin1String("all");
+            // The special folders go next to the Inbox, even from inside "[Gmail]".
+            const bool aTop = !a.path.contains(a.delimiter) || !a.role.isEmpty();
+            const bool bTop = !b.path.contains(b.delimiter) || !b.role.isEmpty();
             const int ra = aTop ? roleOrder(a.role) : 99;
             const int rb = bTop ? roleOrder(b.role) : 99;
             if (ra != rb)
@@ -274,15 +276,18 @@ void Sync::listFolders(std::function<void()> next)
     });
 }
 
-void Sync::readFolder(const QByteArray &path, std::function<void()> next)
+void Sync::readFolder(const QByteArray &path, std::function<void()> then)
 {
-    select(path, [this, path, next](bool ok, const ImapClient::Result &r) {
+    select(path, [this, path, then](bool ok, const ImapClient::Result &r) {
         if (!ok) {
             if (!r.text.isEmpty())
                 emit error(tr("%1 couldn't be opened: %2").arg(Imap::decodeMailboxName(path), r.text));
-            next();
+            then();
             return;
         }
+        // Gmail's inbox: its tabs after its messages.
+        const bool tabs = path == "INBOX" && m_client.hasCapability("X-GM-EXT-1");
+        const std::function<void()> next = !tabs ? then : [this, path, then] { readCategories(path, then); };
         qint64 exists = 0;
         qint64 uidValidity = 0;
         for (const Imap::Response &u : r.untagged) {
@@ -377,6 +382,42 @@ void Sync::readFolder(const QByteArray &path, std::function<void()> next)
                              });
         });
     });
+}
+
+void Sync::readCategories(const QByteArray &path, std::function<void()> next)
+{
+    readCategory(path, 0, std::make_shared<QHash<qint64, QString>>(), next);
+}
+
+// One search per tab other than Primary, one after the other; a failed one leaves what was known.
+void Sync::readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QString>> found, std::function<void()> next)
+{
+    const QStringList categories = MailStore::categories();
+    if (i == 0) // "primary": what no search finds
+        ++i;
+    if (i >= categories.size()) {
+        m_store->setCategories(m_account.id, path, *found);
+        next();
+        return;
+    }
+    const QString category = categories.at(i);
+    m_client.command("UID SEARCH X-GM-RAW \"category:" + category.toLatin1() + '"',
+                     [this, path, i, found, next, category](const ImapClient::Result &r) {
+                         if (!r.ok) {
+                             next();
+                             return;
+                         }
+                         for (const Imap::Response &u : r.untagged) {
+                             if (u.values.isEmpty() || !u.values.at(0).is("SEARCH"))
+                                 continue;
+                             for (qsizetype k = 1; k < u.values.size(); ++k) {
+                                 const qint64 uid = u.values.at(k).text.toLongLong();
+                                 if (uid > 0)
+                                     found->insert(uid, category);
+                             }
+                         }
+                         readCategory(path, i + 1, found, next);
+                     });
 }
 
 void Sync::fetchBody(const QByteArray &path, qint64 uid, BodyDone done)

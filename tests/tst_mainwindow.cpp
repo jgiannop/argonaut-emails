@@ -14,7 +14,9 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QTabBar>
 #include <QTest>
+#include <QTreeWidget>
 
 class TestMainWindow : public QObject
 {
@@ -48,6 +50,7 @@ private slots:
         connect(sync, &Sync::error, this, [](const QString &e) { qWarning("sync: %s", qPrintable(e)); });
         QTRY_VERIFY_WITH_TIMEOUT(!sync->isBusy() && window.list()->messages()->rowCount() == 1, 10000);
         QCOMPARE(window.folders()->currentFolder(), QByteArray("INBOX"));
+        QVERIFY(!window.tabs()->isVisible()); // not Gmail: no tabs
 
         window.list()->setCurrentIndex(window.list()->model()->index(0, 0));
         QTRY_VERIFY(window.view()->hasMessage());
@@ -92,6 +95,74 @@ private slots:
         QCOMPARE(smtp.to, QList<QByteArray>{"<john@example.org>"});
         QTRY_COMPARE_WITH_TIMEOUT(imap.boxes["Sent"].mails.size(), 1, 10000);
         QTRY_VERIFY(imap.find("INBOX", 1)->flags.contains(QStringLiteral("\\Answered")));
+    }
+
+    void gmailTabsOverTheInbox()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        FakeImap imap;
+        imap.capabilities += " X-GM-EXT-1";
+        imap.add("INBOX", "From: Anna <anna@example.org>\r\nSubject: Dinner\r\nDate: Tue, 1 Jul 2025 10:00:00 +0200\r\n\r\nhi\r\n");
+        imap.add("INBOX", "From: Shop <shop@example.org>\r\nSubject: Sale\r\nDate: Tue, 1 Jul 2025 11:00:00 +0200\r\n\r\nbuy\r\n");
+        imap.add("INBOX", "From: Bot <bot@example.org>\r\nSubject: Build failed\r\nDate: Tue, 1 Jul 2025 12:00:00 +0200\r\n\r\nred\r\n");
+        imap.boxes["INBOX"].mails[1].category = "promotions";
+        imap.boxes["INBOX"].mails[2].category = "updates";
+        imap.boxes.remove("Sent");
+        imap.boxes["[Gmail]"].role = "\\Noselect";
+        imap.boxes["[Gmail]/Sent Mail"].role = "\\Sent";
+        imap.boxes["[Gmail]/Important"];
+        Account a;
+        a.email = QStringLiteral("maria@example.com");
+        a.imapHost = QStringLiteral("127.0.0.1");
+        a.imapPort = imap.port();
+        a.imapSecurity = ImapClient::Security::None;
+        a.smtpHost = QStringLiteral("127.0.0.1");
+        Account::save(a);
+        QVERIFY(Passwords::save(a.id, QStringLiteral("imap"), imap.password, a.email));
+        MailStore store(QDir::homePath() + QStringLiteral("/tabs.sqlite"));
+        MainWindow window(&store);
+        window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.syncFor(a.id)->isBusy() && window.tabs()->isVisible(), 10000);
+        // Primary, Promotions, Updates (no Social, no Forums: nothing there); Primary first, as in Gmail.
+        QCOMPARE(window.tabs()->count(), 3);
+        QCOMPARE(window.tabs()->currentIndex(), 0);
+        QCOMPARE(window.tabs()->tabText(0), QStringLiteral("Primary  (1)"));
+        QCOMPARE(window.tabs()->tabText(2), QStringLiteral("Updates  (1)"));
+        QCOMPARE(window.list()->messages()->rowCount(), 1);
+        QCOMPARE(window.list()->messages()->summaryAt(0).subject, QStringLiteral("Dinner"));
+        window.tabs()->setCurrentIndex(1);
+        QCOMPARE(window.list()->messages()->rowCount(), 1);
+        QCOMPARE(window.list()->messages()->summaryAt(0).subject, QStringLiteral("Sale"));
+        if (qEnvironmentVariableIsSet("MAIL_TEST_GRAB_TABS")) {
+            window.resize(1200, 760);
+            QTest::qWait(200);
+            window.grab().save(qEnvironmentVariable("MAIL_TEST_GRAB_TABS"));
+        }
+
+        // Gmail's Sent Mail right under the account, not hidden inside "[Gmail]";
+        // and "[Gmail]" open, with what is left in it.
+        QTreeWidgetItem *account = window.folders()->topLevelItem(0);
+        QStringList shown;
+        for (int i = 0; i < account->childCount(); ++i)
+            shown.append(account->child(i)->toolTip(0));
+        QVERIFY2(shown.contains(QStringLiteral("[Gmail]/Sent Mail")), qPrintable(shown.join(u',')));
+        for (int i = 0; i < account->childCount(); ++i) {
+            if (account->child(i)->toolTip(0) == QLatin1String("[Gmail]")) {
+                QCOMPARE(account->child(i)->childCount(), 1); // Important
+                QVERIFY(account->child(i)->isExpanded());
+            }
+        }
+
+        // Another folder: no tabs, all of it.
+        imap.add("[Gmail]/Sent Mail", "From: maria@example.com\r\nSubject: Hello\r\n\r\nhi\r\n");
+        window.folders()->select(a.id, "[Gmail]/Sent Mail");
+        QVERIFY(!window.tabs()->isVisible());
+        // Back to the Inbox: Primary again.
+        window.folders()->select(a.id, "INBOX");
+        QVERIFY(window.tabs()->isVisible());
+        QCOMPARE(window.tabs()->currentIndex(), 0);
+        QCOMPARE(window.list()->messages()->rowCount(), 1);
     }
 
     void wrongPasswordCanBeFixed()

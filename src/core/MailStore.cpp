@@ -57,6 +57,13 @@ void MailStore::createTables()
                           " attachments INTEGER, body BLOB,"
                           " PRIMARY KEY (account, folder, uid))"));
     q.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS messages_by_date ON messages (account, folder, date)"));
+    // Added in 0.2 (Gmail's inbox tabs); a store made before gets it here.
+    bool hasCategory = false;
+    q.exec(QStringLiteral("PRAGMA table_info(messages)"));
+    while (q.next())
+        hasCategory = hasCategory || q.value(1).toString() == QLatin1String("category");
+    if (!hasCategory)
+        q.exec(QStringLiteral("ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT ''"));
 }
 
 void MailStore::setFolders(const QString &account, const QList<Folder> &folders)
@@ -239,26 +246,84 @@ MailStore::Summary summaryFrom(const QSqlQuery &q)
     s.flagged = q.value(11).toInt() != 0;
     s.answered = q.value(12).toInt() != 0;
     s.attachments = q.value(13).toInt() != 0;
+    s.category = q.value(14).toString();
     return s;
 }
 
 const char *kSummaryColumns = "account, folder, uid, subject, from_name, from_email, to_text, date, message_id, size,"
-                              " seen, flagged, answered, attachments";
+                              " seen, flagged, answered, attachments, category";
 
 } // namespace
 
-QList<MailStore::Summary> MailStore::messages(const QString &account, const QByteArray &path, int limit) const
+QStringList MailStore::categories()
+{
+    return {QStringLiteral("primary"), QStringLiteral("promotions"), QStringLiteral("social"), QStringLiteral("updates"),
+            QStringLiteral("forums")};
+}
+
+QList<MailStore::Summary> MailStore::messages(const QString &account, const QByteArray &path, int limit, const QString &category) const
 {
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT %1 FROM messages WHERE account = ? AND folder = ? ORDER BY date DESC, uid DESC LIMIT ?")
-                  .arg(QLatin1String(kSummaryColumns)));
+    q.prepare(QStringLiteral("SELECT %1 FROM messages WHERE account = ? AND folder = ?%2 ORDER BY date DESC, uid DESC LIMIT ?")
+                  .arg(QLatin1String(kSummaryColumns), category.isEmpty() ? QString() : QStringLiteral(" AND category = ?")));
     q.addBindValue(account);
     q.addBindValue(path);
+    if (!category.isEmpty())
+        q.addBindValue(category == QLatin1String("primary") ? QString(QLatin1String("")) : category);
     q.addBindValue(limit);
     q.exec();
     QList<Summary> out;
     while (q.next())
         out.append(summaryFrom(q));
+    return out;
+}
+
+void MailStore::setCategories(const QString &account, const QByteArray &path, const QHash<qint64, QString> &categories)
+{
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT uid, category FROM messages WHERE account = ? AND folder = ?"));
+    q.addBindValue(account);
+    q.addBindValue(path);
+    q.exec();
+    QList<QPair<qint64, QString>> changes;
+    while (q.next()) {
+        const qint64 uid = q.value(0).toLongLong();
+        const QString now = categories.value(uid);
+        if (q.value(1).toString() != now)
+            changes.append({uid, now});
+    }
+    if (changes.isEmpty())
+        return; // as it was: the list isn't made again
+    m_db.transaction();
+    for (const auto &c : std::as_const(changes)) {
+        QSqlQuery u(m_db);
+        u.prepare(QStringLiteral("UPDATE messages SET category = ? WHERE account = ? AND folder = ? AND uid = ?"));
+        u.addBindValue(c.second.isNull() ? QString(QLatin1String("")) : c.second);
+        u.addBindValue(account);
+        u.addBindValue(path);
+        u.addBindValue(c.first);
+        u.exec();
+    }
+    m_db.commit();
+    emit folderChanged(account, path);
+}
+
+QHash<QString, QPair<int, int>> MailStore::categoryCounts(const QString &account, const QByteArray &path) const
+{
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT category, count(*), sum(seen = 0) FROM messages WHERE account = ? AND folder = ? GROUP BY category"));
+    q.addBindValue(account);
+    q.addBindValue(path);
+    q.exec();
+    QHash<QString, QPair<int, int>> out;
+    bool any = false;
+    while (q.next()) {
+        const QString category = q.value(0).toString();
+        any = any || !category.isEmpty();
+        out.insert(category.isEmpty() ? QStringLiteral("primary") : category, {q.value(1).toInt(), q.value(2).toInt()});
+    }
+    if (!any)
+        return {};
     return out;
 }
 

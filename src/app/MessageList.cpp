@@ -22,10 +22,18 @@ void MessageModel::setFolder(const QString &account, const QByteArray &path, boo
     emit headerDataChanged(Qt::Horizontal, PeopleColumn, PeopleColumn);
 }
 
+void MessageModel::setCategory(const QString &category)
+{
+    if (category == m_category)
+        return;
+    m_category = category;
+    reload();
+}
+
 void MessageModel::reload()
 {
     beginResetModel();
-    m_rows = m_account.isEmpty() ? QList<MailStore::Summary>() : m_store->messages(m_account, m_folder);
+    m_rows = m_account.isEmpty() ? QList<MailStore::Summary>() : m_store->messages(m_account, m_folder, 5000, m_category);
     endResetModel();
 }
 

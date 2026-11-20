@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QSqlDatabase>
@@ -46,7 +47,11 @@ public:
         bool flagged = false;
         bool answered = false;
         bool attachments = false; // a guess from the Content-Type: multipart/mixed
+        QString category;         // Gmail's inbox tab: "social", "promotions", "updates", "forums"; empty: Primary
     };
+
+    // Gmail's inbox tabs, in its order. "primary" is every message of no other.
+    static QStringList categories();
 
     // `file` empty: the default place.
     explicit MailStore(const QString &file = QString(), QObject *parent = nullptr);
@@ -65,7 +70,12 @@ public:
     qint64 lowestUid(const QString &account, const QByteArray &path) const;
 
     void addSummaries(const QList<Summary> &summaries);
-    QList<Summary> messages(const QString &account, const QByteArray &path, int limit = 5000) const;
+    // `category` empty: all of them; "primary": those of no other tab.
+    QList<Summary> messages(const QString &account, const QByteArray &path, int limit = 5000, const QString &category = QString()) const;
+    // Gmail's inbox tabs: uid → category for what the server put in one; the rest are Primary.
+    void setCategories(const QString &account, const QByteArray &path, const QHash<qint64, QString> &categories);
+    // Per tab ("primary" included): {messages, unread}. Empty when no message has a category.
+    QHash<QString, QPair<int, int>> categoryCounts(const QString &account, const QByteArray &path) const;
     Summary summary(const QString &account, const QByteArray &path, qint64 uid) const;
     void setFlags(const QString &account, const QByteArray &path, qint64 uid, bool seen, bool flagged, bool answered);
     // After a look at the server: the UIDs of [from, to] that aren't in `present` are gone.

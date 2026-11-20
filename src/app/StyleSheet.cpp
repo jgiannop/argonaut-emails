@@ -18,6 +18,10 @@ QWidget#messageHeader { background: @sidebar; border-bottom: 1px solid @border; 
 QLabel#messageNote { background: @pathBg; color: @dimFg; }
 QWidget#messageFiles { background: @sidebar; border-top: 1px solid @border; }
 QLineEdit#searchField { background: @pathBg; border: none; border-radius: 8px; padding: 6px 8px; margin: 6px; color: @fg; }
+QTabBar#categoryTabs { background: @window; border: none; }
+QTabBar#categoryTabs::tab { background: transparent; color: @dimFg; border: none; border-bottom: 3px solid transparent; padding: 6px 16px 4px 16px; margin: 0 2px; }
+QTabBar#categoryTabs::tab:selected { color: @fg; border-bottom: 3px solid @accent; }
+QTabBar#categoryTabs::tab:hover:!selected { background: @hover; }
 QToolBar { background: @sidebar; border: none; border-bottom: 1px solid @border; spacing: 4px; padding: 4px; }
 QToolButton { border-radius: 6px; padding: 4px 8px; color: @fg; }
 QToolButton:hover { background: @hover; }
@@ -44,7 +48,7 @@ QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
         {QStringLiteral("@selected"), t.selected}, {QStringLiteral("@itemSelected"), t.itemSelected},
         {QStringLiteral("@pathBg"), t.pathBg},   {QStringLiteral("@popup"), t.popup},
         {QStringLiteral("@border"), t.border},   {QStringLiteral("@scrollHover"), t.scrollHover},
-        {QStringLiteral("@scroll"), t.scroll},
+        {QStringLiteral("@scroll"), t.scroll},   {QStringLiteral("@accent"), t.accent},
     };
     // Longer names first: @scrollHover before @scroll, @itemSelected before @selected.
     for (const auto &token : tokens)

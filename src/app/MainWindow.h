@@ -15,6 +15,7 @@ class QAction;
 class QLabel;
 class QLineEdit;
 class QSplitter;
+class QTabBar;
 class Sync;
 
 // The three panes, as in Thunderbird: accounts and folders at the left,
@@ -31,6 +32,7 @@ public:
     FolderTree *folders() const { return m_folders; }
     MessageList *list() const { return m_list; }
     MessageView *view() const { return m_view; }
+    QTabBar *tabs() const { return m_tabs; }
     Sync *syncFor(const QString &accountId) const { return m_syncs.value(accountId); }
     // Starts (or starts again) an account's sync; tests hand it their own.
     void addSync(Sync *sync);
@@ -48,6 +50,7 @@ private:
     void startAccounts();
     void showFolder(const QString &account, const QByteArray &path);
     void showMessage(const MailStore::Summary &summary);
+    void updateTabs(); // Gmail's inbox tabs over the list, when the folder has them
     void reply(bool all);
     void forward();
     void deleteMessage();
@@ -71,6 +74,7 @@ private:
     QSplitter *m_split = nullptr;      // folders | the rest
     QSplitter *m_rightSplit = nullptr; // list over message
     QLineEdit *m_search = nullptr;
+    QTabBar *m_tabs = nullptr; // Primary, Promotions, Social, Updates, Forums
     QLabel *m_status = nullptr;
     QString m_themeId;
     MailStore::Summary m_shown; // the message in the view

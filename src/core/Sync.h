@@ -8,6 +8,7 @@
 #include <QTimer>
 
 #include <functional>
+#include <memory>
 
 // Keeps one account's folders and messages in the store up to date, and
 // does what the user asks of the server (open a message, mark it read,
@@ -17,7 +18,8 @@
 // time, because each starts by selecting its folder. A folder is first
 // read as its newest `FirstFetch` messages, then only what is new, and the
 // flags of what is kept are looked at again (which is also how messages
-// deleted elsewhere go). It looks again every five minutes.
+// deleted elsewhere go). It looks again every five minutes. On Gmail it
+// also asks which inbox messages are in which of its tabs (Promotions…).
 class Sync : public QObject
 {
     Q_OBJECT
@@ -70,6 +72,9 @@ private:
     void select(const QByteArray &path, std::function<void(bool ok, const ImapClient::Result &result)> done);
     void listFolders(std::function<void()> next);
     void readFolder(const QByteArray &path, std::function<void()> next);
+    // Gmail: which of the inbox's messages are in which tab (X-GM-RAW "category:…").
+    void readCategories(const QByteArray &path, std::function<void()> next);
+    void readCategory(const QByteArray &path, int i, std::shared_ptr<QHash<qint64, QString>> found, std::function<void()> next);
     void storeFlag(const QByteArray &path, qint64 uid, const QByteArray &flag, bool on);
 
     Account m_account;

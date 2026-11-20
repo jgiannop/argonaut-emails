@@ -17,6 +17,7 @@ public:
         qint64 uid = 0;
         QStringList flags;
         QByteArray raw;
+        QByteArray category; // Gmail's inbox tab ("social"…), for X-GM-RAW
     };
     struct Box
     {
@@ -222,6 +223,20 @@ private:
                 if (uids.contains(b.mails.at(i).uid))
                     s->write(fetchData(b.mails.at(i), i + 1, rest));
             }
+            ok();
+        } else if (cmd == "UID" && w.value(1).toUpper() == "SEARCH" && w.value(2).toUpper() == "X-GM-RAW") {
+            // Only what the client asks: "category:<name>".
+            const QByteArray query = unquote(rest.mid(rest.toUpper().indexOf("X-GM-RAW") + 9));
+            if (!capabilities.contains("X-GM-EXT-1") || !query.startsWith("category:")) {
+                s->write(tag + " BAD not here\r\n");
+                return;
+            }
+            QByteArray found = "* SEARCH";
+            for (const Mail &m : boxes.value(c.selected).mails) {
+                if (m.category == query.mid(9))
+                    found += ' ' + QByteArray::number(m.uid);
+            }
+            s->write(found + "\r\n");
             ok();
         } else if (cmd == "UID" && w.value(1).toUpper() == "STORE") {
             Box &b = boxes[c.selected];

@@ -201,7 +201,12 @@ private slots:
         QCOMPARE(all.name, QStringLiteral("All Mail"));
         const QList<MailStore::Folder> folders = store.folders(account().id);
         QCOMPARE(folders.at(0).path, QByteArray("INBOX"));
-        QCOMPARE(folders.at(1).path, QByteArray("[Gmail]/All Mail")); // right after the Inbox
+        QList<QByteArray> order;
+        for (const MailStore::Folder &f : folders)
+            order.append(f.path);
+        // The special ones first, from inside "[Gmail]" too; then the labels by name.
+        QCOMPARE(order, (QList<QByteArray>{"INBOX", "[Gmail]/All Mail", "[Gmail]/Starred", "[Gmail]/Sent Mail", "[Gmail]/Trash",
+                                           "[Gmail]", "Deleted Items", "Sent Items"}));
         QVERIFY(!store.folder(account().id, "[Gmail]").selectable);
 
         sync.moveToTrash("INBOX", 1);
@@ -222,6 +227,57 @@ private slots:
         waitIdle(plainSync);
         QCOMPARE(other.folder(account().id, "Deleted Items").role, QStringLiteral("trash"));
         QCOMPARE(other.folder(account().id, "Sent Items").role, QStringLiteral("sent"));
+    }
+
+    void gmailInboxTabs()
+    {
+        FakeImap server;
+        server.capabilities += " X-GM-EXT-1";
+        server.add("INBOX", mail(1));
+        server.add("INBOX", mail(2));
+        server.add("INBOX", mail(3));
+        server.add("INBOX", mail(4));
+        server.boxes["INBOX"].mails[1].category = "promotions";
+        server.boxes["INBOX"].mails[2].category = "updates";
+        server.boxes["INBOX"].mails[3].category = "updates";
+        MailStore store(QDir::homePath() + QStringLiteral("/tabs.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.start();
+        waitIdle(sync);
+        QVERIFY(server.loggedCommand("UID SEARCH X-GM-RAW \"category:promotions\""));
+        QVERIFY(server.loggedCommand("UID SEARCH X-GM-RAW \"category:forums\""));
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).size(), 1);
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("promotions")).first().uid, 2);
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("updates")).size(), 2);
+
+        // New mail in Social, and one moved to Primary in Gmail: both seen at the next look.
+        server.add("INBOX", mail(5));
+        server.boxes["INBOX"].mails[4].category = "social";
+        server.boxes["INBOX"].mails[3].category.clear();
+        sync.syncFolder("INBOX");
+        waitIdle(sync);
+        QCOMPARE(store.summary(account().id, "INBOX", 5).category, QStringLiteral("social"));
+        QCOMPARE(store.messages(account().id, "INBOX", 100, QStringLiteral("primary")).size(), 2);
+
+        // Only the inbox has tabs.
+        server.log.clear();
+        sync.syncFolder("Sent");
+        waitIdle(sync);
+        QVERIFY(!server.loggedCommand("UID SEARCH"));
+    }
+
+    void noTabsWithoutGmail()
+    {
+        FakeImap server;
+        server.add("INBOX", mail(1));
+        MailStore store(QDir::homePath() + QStringLiteral("/notabs.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.start();
+        waitIdle(sync);
+        QVERIFY(!server.loggedCommand("UID SEARCH"));
+        QVERIFY(store.categoryCounts(account().id, "INBOX").isEmpty());
     }
 
     void newUidValidityStartsAgain()

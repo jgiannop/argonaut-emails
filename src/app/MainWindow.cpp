@@ -22,6 +22,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QTabBar>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -45,8 +46,23 @@ MainWindow::MainWindow(MailStore *store, QWidget *parent)
     m_search->setPlaceholderText(tr("Search the folder's messages (Ctrl+F)"));
     m_search->setClearButtonEnabled(true);
     connect(m_search, &QLineEdit::textChanged, m_list, &MessageList::setSearch);
+    m_tabs = new QTabBar(right);
+    m_tabs->setObjectName(QStringLiteral("categoryTabs"));
+    m_tabs->setDrawBase(false);
+    m_tabs->setExpanding(false);
+    m_tabs->hide();
+    connect(m_tabs, &QTabBar::currentChanged, this, [this](int index) {
+        if (index >= 0)
+            m_list->setCategory(m_tabs->tabData(index).toString());
+    });
+    auto *listPane = new QWidget(right);
+    auto *listLayout = new QVBoxLayout(listPane);
+    listLayout->setContentsMargins(0, 0, 0, 0);
+    listLayout->setSpacing(0);
+    listLayout->addWidget(m_tabs);
+    listLayout->addWidget(m_list, 1);
     m_rightSplit = new QSplitter(Qt::Vertical, right);
-    m_rightSplit->addWidget(m_list);
+    m_rightSplit->addWidget(listPane);
     m_rightSplit->addWidget(m_view);
     m_rightSplit->setStretchFactor(0, 2);
     m_rightSplit->setStretchFactor(1, 3);
@@ -68,8 +84,13 @@ MainWindow::MainWindow(MailStore *store, QWidget *parent)
     buildToolBar();
 
     connect(m_folders, &FolderTree::folderChosen, this, &MainWindow::showFolder);
+    connect(store, &MailStore::folderChanged, this, [this](const QString &account, const QByteArray &path) {
+        if (account == m_list->messages()->account() && path == m_list->messages()->folder())
+            updateTabs();
+    });
     connect(m_folders, &FolderTree::accountChosen, this, [this] {
         m_list->setFolder(QString(), QByteArray(), false);
+        updateTabs();
         m_view->showNote(tr("Choose a folder. File → Account Settings… changes this account (its password too)."));
         updateActions();
     });
@@ -241,13 +262,59 @@ void MainWindow::showFolder(const QString &account, const QByteArray &path)
 {
     const MailStore::Folder f = m_store->folder(account, path);
     const bool recipients = f.role == QLatin1String("sent") || f.role == QLatin1String("drafts");
+    m_list->setCategory(QString());
     m_list->setFolder(account, path, recipients);
+    updateTabs();
     m_view->showNote(tr("Choose a message to read it."));
     m_shown = {};
     if (Sync *sync = m_syncs.value(account))
         sync->syncFolder(path);
     setWindowTitle(QStringLiteral("%1 – %2").arg(f.name, tr("Argonaut Emails")));
     updateActions();
+}
+
+void MainWindow::updateTabs()
+{
+    const QString account = m_list->messages()->account();
+    const QByteArray path = m_list->messages()->folder();
+    const QHash<QString, QPair<int, int>> counts = account.isEmpty() ? QHash<QString, QPair<int, int>>()
+                                                                     : m_store->categoryCounts(account, path);
+    if (counts.isEmpty()) { // not Gmail's inbox (or not known yet): every message, no tabs
+        m_tabs->hide();
+        m_list->setCategory(QString());
+        return;
+    }
+    static const QHash<QString, QString> names{
+        {QStringLiteral("primary"), QT_TR_NOOP("Primary")},     {QStringLiteral("promotions"), QT_TR_NOOP("Promotions")},
+        {QStringLiteral("social"), QT_TR_NOOP("Social")},       {QStringLiteral("updates"), QT_TR_NOOP("Updates")},
+        {QStringLiteral("forums"), QT_TR_NOOP("Forums")},
+    };
+    QString chosen = m_list->messages()->category();
+    QStringList shown;
+    for (const QString &c : MailStore::categories()) {
+        if (c == QLatin1String("primary") || counts.value(c).first > 0)
+            shown.append(c);
+    }
+    if (!shown.contains(chosen))
+        chosen = QStringLiteral("primary");
+    QSignalBlocker block(m_tabs);
+    while (m_tabs->count() > shown.size())
+        m_tabs->removeTab(m_tabs->count() - 1);
+    for (int i = 0; i < shown.size(); ++i) {
+        const QString &c = shown.at(i);
+        const int unread = counts.value(c).second;
+        const QString name = tr(names.value(c).toUtf8().constData());
+        const QString text = unread > 0 ? QStringLiteral("%1  (%2)").arg(name).arg(unread) : name;
+        if (i >= m_tabs->count())
+            m_tabs->addTab(text);
+        else
+            m_tabs->setTabText(i, text);
+        m_tabs->setTabData(i, c);
+        if (c == chosen)
+            m_tabs->setCurrentIndex(i);
+    }
+    m_tabs->show();
+    m_list->setCategory(chosen);
 }
 
 void MainWindow::showMessage(const MailStore::Summary &summary)
@@ -423,6 +490,7 @@ void MainWindow::removeAccount()
     Account::remove(a.id);
     m_store->removeAccount(a.id);
     m_list->setFolder(QString(), QByteArray(), false);
+    updateTabs();
     m_view->showNote(Account::all().isEmpty() ? tr("Add your mail account to start: File → Add Account…") : tr("Choose a message to read it."));
     m_folders->reload();
 }

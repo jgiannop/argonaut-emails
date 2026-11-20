@@ -19,6 +19,9 @@ public:
     explicit MessageModel(MailStore *store, QObject *parent = nullptr);
 
     void setFolder(const QString &account, const QByteArray &path, bool showRecipients);
+    // Gmail's inbox tabs: only those of one ("primary"…); empty: all.
+    void setCategory(const QString &category);
+    QString category() const { return m_category; }
     void reload();
     QString account() const { return m_account; }
     QByteArray folder() const { return m_folder; }
@@ -35,6 +38,7 @@ private:
     QString m_account;
     QByteArray m_folder;
     bool m_recipients = false;
+    QString m_category;
     QList<MailStore::Summary> m_rows;
 };
 
@@ -47,6 +51,7 @@ public:
 
     MessageModel *messages() const { return m_model; }
     void setFolder(const QString &account, const QByteArray &path, bool showRecipients);
+    void setCategory(const QString &category) { m_model->setCategory(category); }
     void setSearch(const QString &text);
     // The message that is selected, or none (uid 0).
     MailStore::Summary current() const;

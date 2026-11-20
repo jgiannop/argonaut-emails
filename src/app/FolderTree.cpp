@@ -74,8 +74,8 @@ void FolderTree::reload()
         for (const MailStore::Folder &f : m_store->folders(a.id)) {
             const QString decoded = Imap::decodeMailboxName(f.path);
             const QString parentName = decoded.section(QLatin1Char(f.delimiter), 0, -2);
-            // All Mail (Gmail's "[Gmail]/All Mail") next to the Inbox, not inside "[Gmail]".
-            const bool atTop = parentName.isEmpty() || f.role == QLatin1String("all");
+            // Special folders (Gmail's "[Gmail]/Sent Mail"…) next to the Inbox, not inside "[Gmail]".
+            const bool atTop = parentName.isEmpty() || !f.role.isEmpty();
             QTreeWidgetItem *parent = atTop ? top : byName.value(parentName, top);
             auto *item = new QTreeWidgetItem(parent);
             item->setData(0, AccountRole, a.id);
@@ -88,8 +88,8 @@ void FolderTree::reload()
             item->setToolTip(0, decoded);
             byName.insert(decoded, item);
         }
-        top->setExpanded(true);
     }
+    expandAll(); // the theme draws no arrows: a closed group would hide its folders
     for (int i = 0; i < topLevelItemCount(); ++i)
         updateCounts(topLevelItem(i)->data(0, AccountRole).toString());
     applyTheme(m_theme);
