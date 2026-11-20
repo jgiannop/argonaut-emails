@@ -23,6 +23,10 @@ Glyph glyphFor(const QString &role)
         return Glyph::Drive;
     if (role == QLatin1String("junk"))
         return Glyph::Close;
+    if (role == QLatin1String("all"))
+        return Glyph::List;
+    if (role == QLatin1String("starred"))
+        return Glyph::Star;
     return Glyph::Folder;
 }
 
@@ -70,7 +74,9 @@ void FolderTree::reload()
         for (const MailStore::Folder &f : m_store->folders(a.id)) {
             const QString decoded = Imap::decodeMailboxName(f.path);
             const QString parentName = decoded.section(QLatin1Char(f.delimiter), 0, -2);
-            QTreeWidgetItem *parent = parentName.isEmpty() ? top : byName.value(parentName, top);
+            // All Mail (Gmail's "[Gmail]/All Mail") next to the Inbox, not inside "[Gmail]".
+            const bool atTop = parentName.isEmpty() || f.role == QLatin1String("all");
+            QTreeWidgetItem *parent = atTop ? top : byName.value(parentName, top);
             auto *item = new QTreeWidgetItem(parent);
             item->setData(0, AccountRole, a.id);
             item->setData(0, NameRole, f.name);

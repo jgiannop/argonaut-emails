@@ -12,6 +12,6 @@ CMakeLists.txt.user*
 *~
 .DS_Store
 
-# Crash dumps
-core
-core.*
+# Crash dumps (only at the top: "core" alone would also hide src/core)
+/core
+/core.[0-9]*

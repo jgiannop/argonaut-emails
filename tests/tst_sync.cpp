@@ -172,6 +172,58 @@ private slots:
         QCOMPARE(server.boxes["Sent"].mails.first().raw, QByteArray("Subject: sent\r\n\r\nhello\r\n"));
     }
 
+    void specialFoldersByFlagsFirst()
+    {
+        // Gmail with labels from an old Outlook: only the flags say which is the Trash.
+        FakeImap server;
+        server.boxes.clear();
+        server.boxes["INBOX"];
+        server.boxes["Deleted Items"];
+        server.boxes["Sent Items"];
+        server.boxes["[Gmail]"].role = "\\Noselect";
+        server.boxes["[Gmail]/All Mail"].role = "\\All";
+        server.boxes["[Gmail]/Sent Mail"].role = "\\Sent";
+        server.boxes["[Gmail]/Starred"].role = "\\Flagged";
+        server.boxes["[Gmail]/Trash"].role = "\\Trash";
+        server.add("INBOX", mail(1));
+        MailStore store(QDir::homePath() + QStringLiteral("/gmail.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.start();
+        waitIdle(sync);
+        QCOMPARE(store.folder(account().id, "Deleted Items").role, QString());
+        QCOMPARE(store.folder(account().id, "Sent Items").role, QString());
+        QCOMPARE(store.folder(account().id, "[Gmail]/Trash").role, QStringLiteral("trash"));
+        QCOMPARE(store.folder(account().id, "[Gmail]/Sent Mail").role, QStringLiteral("sent"));
+        QCOMPARE(store.folder(account().id, "[Gmail]/Starred").role, QStringLiteral("starred"));
+        const MailStore::Folder all = store.folder(account().id, "[Gmail]/All Mail");
+        QCOMPARE(all.role, QStringLiteral("all"));
+        QCOMPARE(all.name, QStringLiteral("All Mail"));
+        const QList<MailStore::Folder> folders = store.folders(account().id);
+        QCOMPARE(folders.at(0).path, QByteArray("INBOX"));
+        QCOMPARE(folders.at(1).path, QByteArray("[Gmail]/All Mail")); // right after the Inbox
+        QVERIFY(!store.folder(account().id, "[Gmail]").selectable);
+
+        sync.moveToTrash("INBOX", 1);
+        waitIdle(sync);
+        QCOMPARE(server.boxes["[Gmail]/Trash"].mails.size(), 1);
+        QVERIFY(server.boxes["Deleted Items"].mails.isEmpty());
+
+        // A server that marks nothing: the names are all there is.
+        FakeImap plain;
+        plain.boxes.clear();
+        plain.boxes["INBOX"];
+        plain.boxes["Deleted Items"];
+        plain.boxes["Sent Items"];
+        MailStore other(QDir::homePath() + QStringLiteral("/plain.sqlite"));
+        Sync plainSync(account(), &other);
+        plainSync.setSettings(settingsFor(plain));
+        plainSync.start();
+        waitIdle(plainSync);
+        QCOMPARE(other.folder(account().id, "Deleted Items").role, QStringLiteral("trash"));
+        QCOMPARE(other.folder(account().id, "Sent Items").role, QStringLiteral("sent"));
+    }
+
     void newUidValidityStartsAgain()
     {
         FakeImap server;
