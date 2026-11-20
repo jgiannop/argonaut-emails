@@ -69,6 +69,17 @@ private slots:
         second.open(settingsFor(old));
         QTRY_COMPARE(secondReady.size(), 1);
         QVERIFY(old.loggedCommand("LOGIN \"maria@example.com\""));
+
+        // Like Gmail: MOVE is said only after logging in, and not in the login's answer.
+        FakeImap gmail;
+        gmail.beforeLogin = "IMAP4rev1 AUTH=PLAIN SASL-IR X-GM-EXT-1";
+        gmail.capabilities = "IMAP4rev1 X-GM-EXT-1 MOVE UIDPLUS";
+        gmail.capabilityInLoginAnswer = false;
+        ImapClient third;
+        QSignalSpy thirdReady(&third, &ImapClient::ready);
+        third.open(settingsFor(gmail));
+        QTRY_COMPARE(thirdReady.size(), 1);
+        QVERIFY(third.hasCapability("MOVE"));
     }
 
     void wrongPasswordIsSaid()

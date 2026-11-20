@@ -30,6 +30,8 @@ public:
     QString user = QStringLiteral("maria@example.com");
     QString password = QStringLiteral("σωστό-pass");
     QByteArray capabilities = "IMAP4rev1 AUTH=PLAIN SASL-IR MOVE UIDPLUS";
+    QByteArray beforeLogin; // like Gmail: fewer capabilities until logged in (empty: the same)
+    bool capabilityInLoginAnswer = true;
     QList<QByteArray> log; // every command line, tag removed
 
     FakeImap()
@@ -170,13 +172,13 @@ private:
         auto ok = [&](const QByteArray &text = "done") { s->write(tag + " OK " + text + "\r\n"); };
         auto no = [&](const QByteArray &text) { s->write(tag + " NO " + text + "\r\n"); };
         if (cmd == "CAPABILITY") {
-            s->write("* CAPABILITY " + capabilities + "\r\n");
+            s->write("* CAPABILITY " + (c.authed || beforeLogin.isEmpty() ? capabilities : beforeLogin) + "\r\n");
             ok();
         } else if (cmd == "AUTHENTICATE" && w.value(1).toUpper() == "PLAIN") {
             const QList<QByteArray> parts = QByteArray::fromBase64(w.value(2)).split('\0');
             if (parts.size() == 3 && QString::fromUtf8(parts.at(1)) == user && QString::fromUtf8(parts.at(2)) == password) {
                 c.authed = true;
-                ok("[CAPABILITY " + capabilities + "] logged in");
+                ok(capabilityInLoginAnswer ? "[CAPABILITY " + capabilities + "] logged in" : QByteArray("logged in"));
             } else {
                 no("[AUTHENTICATIONFAILED] Invalid credentials");
             }
