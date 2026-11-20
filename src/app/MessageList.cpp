@@ -1,7 +1,10 @@
 #include "MessageList.h"
 
+#include <QApplication>
 #include <QHeaderView>
 #include <QLocale>
+#include <QPainter>
+#include <QStyledItemDelegate>
 
 MessageModel::MessageModel(MailStore *store, QObject *parent)
     : QAbstractTableModel(parent)
@@ -137,6 +140,73 @@ QVariant MessageModel::headerData(int section, Qt::Orientation orientation, int 
     return {};
 }
 
+// One message on two lines, for the list beside the message:
+//   Sender                          ★  12:29
+//   The subject, as wide as the list
+// The other columns are hidden; their text is read from the same row.
+class CardDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &) const override
+    {
+        const QFontMetrics fm(option.font);
+        return {200, fm.height() * 2 + 4 + 2 * Padding};
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        opt.text.clear(); // the background and the selection as the theme draws them; the text is ours
+        const QWidget *widget = option.widget;
+        QStyle *style = widget ? widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+
+        const auto text = [&index](int column) { return index.siblingAtColumn(column).data().toString(); };
+        const bool unread = index.data(Qt::FontRole).value<QFont>().bold();
+        // The theme's selection is a light tint under the usual text colour (StyleSheet: ::item:selected).
+        const QColor color = opt.palette.color(QPalette::Text);
+        QColor dim = color;
+        dim.setAlphaF(0.6);
+
+        painter->save();
+        const QRect r = option.rect.adjusted(Padding + 6, Padding, -Padding - 4, -Padding);
+        QFont font = option.font;
+        font.setBold(unread);
+        const QFontMetrics fm(font);
+        const int line = fm.height();
+
+        // The first line: the date (and the star) at the right, the sender in what is left.
+        QString right = text(MessageModel::DateColumn);
+        if (!text(MessageModel::StarColumn).isEmpty())
+            right = QStringLiteral("★  ") + right;
+        painter->setFont(option.font);
+        painter->setPen(dim);
+        const int rightWidth = QFontMetrics(option.font).horizontalAdvance(right);
+        painter->drawText(QRect(r.right() - rightWidth, r.top(), rightWidth, line), Qt::AlignRight | Qt::AlignVCenter, right);
+        painter->setFont(font);
+        painter->setPen(color);
+        const QRect who(r.left(), r.top(), r.width() - rightWidth - 12, line);
+        painter->drawText(who, Qt::AlignLeft | Qt::AlignVCenter, fm.elidedText(text(MessageModel::PeopleColumn), Qt::ElideRight, who.width()));
+        // The second: the subject.
+        const QRect subject(r.left(), r.top() + line + 2, r.width(), line);
+        painter->setPen(unread ? color : dim);
+        painter->drawText(subject, Qt::AlignLeft | Qt::AlignVCenter,
+                          fm.elidedText(text(MessageModel::SubjectColumn), Qt::ElideRight, subject.width()));
+        // A thin line under it.
+        QColor rule = color;
+        rule.setAlphaF(0.08);
+        painter->setPen(rule);
+        painter->drawLine(option.rect.left(), option.rect.bottom(), option.rect.right(), option.rect.bottom());
+        painter->restore();
+    }
+
+private:
+    static constexpr int Padding = 6;
+};
+
 MessageList::MessageList(MailStore *store, QWidget *parent)
     : QTreeView(parent)
     , m_model(new MessageModel(store, this))
@@ -185,6 +255,23 @@ MessageList::MessageList(MailStore *store, QWidget *parent)
 void MessageList::setFolder(const QString &account, const QByteArray &path, bool showRecipients)
 {
     m_model->setFolder(account, path, showRecipients);
+}
+
+void MessageList::setCards(bool cards)
+{
+    if (cards == m_cards)
+        return;
+    m_cards = cards;
+    if (!m_cardDelegate)
+        m_cardDelegate = new CardDelegate(this);
+    setItemDelegateForColumn(MessageModel::PeopleColumn, cards ? m_cardDelegate : nullptr);
+    header()->setVisible(!cards);
+    for (const int column : {MessageModel::StarColumn, MessageModel::SubjectColumn, MessageModel::DateColumn})
+        setColumnHidden(column, cards);
+    header()->setSectionResizeMode(MessageModel::PeopleColumn, cards ? QHeaderView::Stretch : QHeaderView::Interactive);
+    if (!cards)
+        header()->resizeSection(MessageModel::PeopleColumn, 220);
+    doItemsLayout(); // the rows' height again
 }
 
 void MessageList::setSearch(const QString &text)

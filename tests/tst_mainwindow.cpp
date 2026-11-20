@@ -12,6 +12,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QHeaderView>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -193,6 +194,11 @@ private slots:
             QCOMPARE(split->widget(0)->isAncestorOf(window.list()), true); // the list at the left
             QCOMPARE(split->widget(1), static_cast<QWidget *>(window.view())); // the message at the right
             QVERIFY(split->sizes().at(1) > split->sizes().at(0)); // the message gets the most
+            // The list in two lines a message: no columns, no header.
+            QVERIFY(window.list()->cards());
+            QVERIFY(window.list()->header()->isHidden());
+            QVERIFY(window.list()->isColumnHidden(MessageModel::SubjectColumn));
+            QVERIFY(!window.list()->isColumnHidden(MessageModel::PeopleColumn));
             split->setSizes({300, 600});
             const QList<int> beside = split->sizes();
 
@@ -203,6 +209,9 @@ private slots:
             }
             QCOMPARE(split->orientation(), Qt::Vertical);
             QCOMPARE(split->sizes(), below);
+            QVERIFY(!window.list()->cards()); // the columns again
+            QVERIFY(!window.list()->header()->isHidden());
+            QVERIFY(!window.list()->isColumnHidden(MessageModel::SubjectColumn));
             window.besideAction()->trigger();
             QCOMPARE(split->sizes(), beside);
             window.close(); // saves
@@ -211,6 +220,7 @@ private slots:
         MainWindow again(&store);
         again.resize(1200, 800);
         QCOMPARE(again.listAndMessage()->orientation(), Qt::Horizontal);
+        QVERIFY(again.list()->cards());
         QVERIFY(again.besideAction()->isChecked());
         for (QAction *a : again.findChildren<QAction *>()) { // the other tests want it below
             if (a->text() == QStringLiteral("Below the List"))

@@ -579,6 +579,7 @@ void MainWindow::setMessageBeside(bool beside)
     s.setValue(splitKey(messageBeside()), m_rightSplit->saveState()); // the way it was, for coming back
     s.setValue(QStringLiteral("window/messageBeside"), beside);
     m_rightSplit->setOrientation(beside ? Qt::Horizontal : Qt::Vertical);
+    m_list->setCards(beside);
     const QByteArray state = s.value(splitKey(beside)).toByteArray();
     if (state.isEmpty() || !m_rightSplit->restoreState(state)) {
         // The first time: the list two fifths, the message the rest.
@@ -599,6 +600,7 @@ void MainWindow::loadSettings()
     m_besideAct->setChecked(beside);
     m_belowAct->setChecked(!beside);
     m_rightSplit->setOrientation(beside ? Qt::Horizontal : Qt::Vertical);
+    m_list->setCards(beside);
     if (!s.value(splitKey(beside)).isNull())
         m_rightSplit->restoreState(s.value(splitKey(beside)).toByteArray());
 }

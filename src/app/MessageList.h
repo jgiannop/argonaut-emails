@@ -53,6 +53,9 @@ public:
     void setFolder(const QString &account, const QByteArray &path, bool showRecipients);
     void setCategory(const QString &category) { m_model->setCategory(category); }
     void setSearch(const QString &text);
+    // Beside the message: each message on two lines (sender and date, the subject under them), no columns.
+    void setCards(bool cards);
+    bool cards() const { return m_cards; }
     // The message that is selected, or none (uid 0).
     MailStore::Summary current() const;
     void selectUid(qint64 uid);
@@ -65,4 +68,6 @@ private:
     MessageModel *m_model;
     QSortFilterProxyModel *m_filter;
     qint64 m_keptUid = 0;
+    bool m_cards = false;
+    class CardDelegate *m_cardDelegate = nullptr;
 };
