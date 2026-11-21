@@ -1,5 +1,7 @@
 #include "MessageView.h"
 
+#include "FlowLayout.h"
+
 #include "MailWebView.h"
 #include "SafeHtml.h"
 
@@ -11,6 +13,9 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollBar>
+#include <QScrollArea>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUrl>
@@ -99,11 +104,19 @@ MessageView::MessageView(QWidget *parent)
     });
     layout->addWidget(m_body, 1);
 
-    m_files = new QWidget(this);
+    // The attachments wrap onto more lines rather than widen the window (a
+    // message with twenty of them would push the folders and the list away).
+    m_files = new QScrollArea(this);
     m_files->setObjectName(QStringLiteral("messageFiles"));
-    m_filesLayout = new QHBoxLayout(m_files);
+    m_files->setFrameShape(QFrame::NoFrame);
+    m_files->setWidgetResizable(true);
+    m_files->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_files->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    auto *filesBox = new QWidget(m_files);
+    filesBox->setObjectName(QStringLiteral("messageFilesBox"));
+    m_filesLayout = new FlowLayout(filesBox, 6);
     m_filesLayout->setContentsMargins(12, 6, 12, 8);
-    m_filesLayout->setSpacing(6);
+    m_files->setWidget(filesBox);
     m_files->hide();
     layout->addWidget(m_files);
 
@@ -166,14 +179,35 @@ void MessageView::showMessage(const QByteArray &raw)
     }
     const QList<Mime::Attachment> files = m_message.attachments();
     for (int i = 0; i < files.size(); ++i) {
-        auto *button = new QPushButton(QStringLiteral("%1  (%2)").arg(files.at(i).fileName, sizeText(files.at(i).size)), m_files);
+        // A long name is shortened in the middle (its end says what it is); the tooltip has all of it.
+        const QString name = fontMetrics().elidedText(files.at(i).fileName, Qt::ElideMiddle, 260);
+        auto *button = new QPushButton(QStringLiteral("%1  (%2)").arg(name, sizeText(files.at(i).size)), m_files->widget());
         button->setToolTip(tr("Save “%1”…").arg(files.at(i).fileName));
         button->setIcon(glyphIcon(Glyph::Documents, m_theme.dimFg));
         connect(button, &QPushButton::clicked, this, [this, i] { saveAttachment(i); });
         m_filesLayout->addWidget(button);
     }
-    m_filesLayout->addStretch(1);
     m_files->setVisible(!files.isEmpty());
+    m_files->verticalScrollBar()->setValue(0);
+    fitFiles();
+}
+
+void MessageView::fitFiles()
+{
+    if (!m_files || m_files->isHidden() || m_filesLayout->count() == 0)
+        return;
+    const int width = qMax(1, m_files->viewport()->width());
+    const int needed = m_filesLayout->heightForWidth(width);
+    const int line = m_filesLayout->itemAt(0)->sizeHint().height();
+    const QMargins margins = m_filesLayout->contentsMargins();
+    const int threeLines = margins.top() + 3 * line + 3 * 6; // up to the fourth line, which the scroll bar reaches
+    m_files->setFixedHeight(qMin(needed, threeLines));
+}
+
+void MessageView::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    fitFiles();
 }
 
 void MessageView::showBody(bool remotePictures)

@@ -92,7 +92,7 @@ Ignore message types and keys you don't know; newer versions may add some.
 ### From the program
 
 ```json
-{"type": "hello", "protocol": 1, "app": "argonaut-emails", "version": "0.2.0"}
+{"type": "hello", "protocol": 1, "app": "argonaut-emails", "version": "0.2.1"}
 {"type": "invoke", "command": "count", "selection": [{"account": "maria@example.com", "folder": "Inbox", "role": "inbox",
   "uid": 4521, "from": "Eleni", "fromEmail": "eleni@example.com", "subject": "Dinner", "date": "2026-11-19T18:02:00Z"}], "input": ""}
 {"type": "form", "id": "start", "cancelled": false, "values": {"read": "…"}, "button": 0}

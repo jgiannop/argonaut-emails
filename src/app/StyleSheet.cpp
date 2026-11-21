@@ -17,7 +17,8 @@ QHeaderView::section { background: @window; color: @dimFg; border: none; border-
 QWidget#messageHeader { background: @sidebar; border-bottom: 1px solid @border; }
 QWidget#messageNoteBar { background: @pathBg; }
 QLabel#messageNote { color: @dimFg; }
-QWidget#messageFiles { background: @sidebar; border-top: 1px solid @border; }
+QScrollArea#messageFiles, QWidget#messageFilesBox { background: @sidebar; }
+QScrollArea#messageFiles { border-top: 1px solid @border; }
 QLineEdit#searchField { background: @pathBg; border: none; border-radius: 8px; padding: 6px 8px; margin: 6px; color: @fg; }
 QTabBar#categoryTabs { background: @window; border: none; }
 QTabBar#categoryTabs::tab { background: transparent; color: @dimFg; border: none; border-bottom: 3px solid transparent; padding: 6px 16px 4px 16px; margin: 0 2px; }

@@ -5,8 +5,10 @@
 
 #include <QWidget>
 
+class FlowLayout;
 class MailWebView;
 class QHBoxLayout;
+class QScrollArea;
 class QLabel;
 class QPushButton;
 
@@ -31,9 +33,14 @@ public:
     QString shownText() const; // for tests: the text shown, once it is there
     bool picturesShown() const; // from the internet, after "Show pictures"
     MailWebView *body() const { return m_body; }
+    QScrollArea *files() const { return m_files; }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     void saveAttachment(int index);
+    void fitFiles(); // the attachments' height for the width there is
     void showBody(bool remotePictures);
 
     Mime::Message m_message;
@@ -49,8 +56,8 @@ private:
     QWidget *m_noteBar = nullptr; // "3 pictures from the internet weren't loaded"  [Show pictures]
     QLabel *m_note = nullptr;
     QPushButton *m_showPictures = nullptr;
-    QWidget *m_files = nullptr;
-    QHBoxLayout *m_filesLayout = nullptr;
+    QScrollArea *m_files = nullptr;      // the attachments, on as many lines as they need (three shown, the rest scrolled)
+    FlowLayout *m_filesLayout = nullptr;
     MailWebView *m_body = nullptr;
     Theme m_theme;
 };

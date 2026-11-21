@@ -4,7 +4,7 @@ An email client for the desktop, like Thunderbird, written in C++17 with Qt 6
 Widgets: the same technology and the same look as
 [Argonaut](https://github.com/jgiannop/argonaut), the file manager.
 
-Version 0.2.0: the tray, and messages that open at once.
+Version 0.2.1: the tray, messages that open at once, and many attachments on several lines.
 
 ## What it does
 
@@ -72,7 +72,7 @@ Each [release](https://github.com/jgiannop/argonaut-emails/releases) has a
 your system and install it with apt, which also installs what it needs:
 
 ```bash
-sudo apt install ./argonaut-emails_0.2.0_ubuntu24.04_amd64.deb
+sudo apt install ./argonaut-emails_0.2.1_ubuntu24.04_amd64.deb
 ```
 
 It appears in the applications as **Argonaut Emails**, with its icon: an

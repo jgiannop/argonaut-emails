@@ -25,6 +25,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSplitter>
+#include <QScrollArea>
 #include <QTabBar>
 #include <QTest>
 #include <QTreeWidget>
@@ -301,6 +302,40 @@ private slots:
         QCOMPARE(window.list()->current().subject, QStringLiteral("Note 24"));
         QTRY_VERIFY_WITH_TIMEOUT(window.view()->shownText().contains(QStringLiteral("Text 24")), 10000);
         QTRY_COMPARE_WITH_TIMEOUT(window.tray()->unread(), 2, 5000);
+    }
+
+    // Many attachments wrap onto more lines (three shown, the rest scrolled):
+    // they never make the message wider than the room it has.
+    void manyAttachmentsWrap()
+    {
+        QByteArray raw = "From: Woso <sales@example.cn>\r\nSubject: Quotation\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n"
+                         "--b\r\nContent-Type: text/plain\r\n\r\nPlease see the files.\r\n";
+        for (int i = 1; i <= 30; ++i) {
+            const QByteArray name = i % 7 == 0 ? "a-very-long-name-for-a-spreadsheet-of-prices-and-models-number-" + QByteArray::number(i) + ".xlsx"
+                                               : QByteArray::number(i) + ".jpg";
+            raw += "--b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"" + name
+                   + "\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + QByteArray(2000, 'x').toBase64() + "\r\n";
+        }
+        raw += "--b--\r\n";
+        MessageView view;
+        view.resize(600, 700);
+        view.show();
+        view.showMessage(raw);
+        QTest::qWait(50);
+        QScrollArea *files = view.files();
+        QVERIFY(files->isVisible());
+        QVERIFY2(view.minimumSizeHint().width() < 400, qPrintable(QString::number(view.minimumSizeHint().width())));
+        const QList<QPushButton *> buttons = files->widget()->findChildren<QPushButton *>();
+        QCOMPARE(buttons.size(), 30);
+        const int line = buttons.first()->height();
+        QVERIFY(files->height() <= 3 * line + 40); // three lines at most
+        QVERIFY(files->verticalScrollBar()->maximum() > 0); // the rest: scrolled to
+        for (QPushButton *b : buttons)
+            QVERIFY(b->geometry().right() <= files->viewport()->width()); // nothing beyond the edge
+        QVERIFY(buttons.at(6)->text().contains(QChar(0x2026)));  // a long name, shortened
+        QVERIFY(buttons.at(6)->toolTip().contains("number-7.xlsx")); // and whole in its tooltip
+        if (qEnvironmentVariableIsSet("MAIL_TEST_GRAB_FILES"))
+            view.grab().save(qEnvironmentVariable("MAIL_TEST_GRAB_FILES"));
     }
 
     // Ctrl+Shift+P: every menu command, an extension's too, found by a few letters.
