@@ -207,6 +207,11 @@ int PreferencesDialog::checkMinutes()
     return qBound(1, minutes, 60);
 }
 
+bool PreferencesDialog::push()
+{
+    return QSettings().value(QStringLiteral("mail/push"), true).toBool();
+}
+
 bool PreferencesDialog::fetchAhead()
 {
     return QSettings().value(QStringLiteral("mail/fetchAhead"), true).toBool();
@@ -309,8 +314,20 @@ QWidget *PreferencesDialog::buildGeneral()
     layout->addSpacing(14);
 
     layout->addWidget(subheading(tr("New mail"), page));
+    m_push = new QCheckBox(tr("Show new mail at once"), page);
+    m_push->setObjectName("prefCheck");
+    m_push->setChecked(push());
+    connect(m_push, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("mail/push"), on);
+        emit pushChanged(on);
+    });
+    layout->addWidget(m_push);
+    layout->addWidget(hint(tr("The server tells at once when a message comes to the inbox (IMAP IDLE: Gmail and most "
+                              "servers can). It keeps one more connection open."),
+                           page));
+    layout->addSpacing(8);
     auto *every = new QHBoxLayout;
-    every->addWidget(new QLabel(tr("Check for new mail every"), page));
+    every->addWidget(new QLabel(tr("Look in every folder every"), page));
     m_checkEvery = new QComboBox(page);
     m_checkEvery->setObjectName("prefCombo");
     for (int minutes : CheckChoices)
@@ -325,7 +342,9 @@ QWidget *PreferencesDialog::buildGeneral()
     every->addWidget(m_checkEvery);
     every->addStretch();
     layout->addLayout(every);
-    layout->addWidget(hint(tr("And whenever you open a folder, or press F5."), page));
+    layout->addWidget(hint(tr("And whenever you open a folder, or press F5. Without push, this is also when new "
+                              "mail in the inbox shows."),
+                           page));
     layout->addSpacing(8);
 
     m_fetchAhead = new QCheckBox(tr("Fetch the newest messages ahead, so they open at once"), page);

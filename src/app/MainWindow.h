@@ -9,6 +9,7 @@
 #include <QMainWindow>
 #include <QPointer>
 
+struct Account;
 class CommandPalette;
 class ComposeWindow;
 class FolderTree;
@@ -71,6 +72,7 @@ private:
     void buildMenus();
     void buildToolBar();
     void startAccounts();
+    Sync *newSync(const Account &account); // with Preferences' push
     void showFolder(const QString &account, const QByteArray &path);
     void showMessage(const MailStore::Summary &summary);
     void updateTabs(); // Gmail's inbox tabs over the list, when the folder has them

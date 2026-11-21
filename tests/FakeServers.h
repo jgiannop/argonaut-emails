@@ -86,6 +86,23 @@ public:
         for (QTcpSocket *s : findChildren<QTcpSocket *>(QString(), Qt::FindDirectChildrenOnly))
             m_deaf.insert(s);
     }
+    // Tells the connections idling in `box` how many messages it has now,
+    // as a server does when one arrives.
+    void announce(const QByteArray &box = "INBOX")
+    {
+        for (QTcpSocket *s : findChildren<QTcpSocket *>(QString(), Qt::FindDirectChildrenOnly)) {
+            const Conn &c = m_conns[s];
+            if (!c.idleTag.isEmpty() && c.selected == box && !m_deaf.contains(s) && s->state() == QAbstractSocket::ConnectedState)
+                s->write("* " + QByteArray::number(boxes[box].mails.size()) + " EXISTS\r\n");
+        }
+    }
+    int idling() const
+    {
+        int n = 0;
+        for (auto it = m_conns.cbegin(); it != m_conns.cend(); ++it)
+            n += !it->idleTag.isEmpty() && !m_deaf.contains(it.key()) && it.key()->state() == QAbstractSocket::ConnectedState;
+        return n;
+    }
     int connections() const { return int(findChildren<QTcpSocket *>(QString(), Qt::FindDirectChildrenOnly).size()); }
     bool loggedCommand(const QByteArray &start) const
     {
@@ -106,6 +123,7 @@ private:
         QByteArray appendTag;
         QByteArray appendBox;
         qsizetype appendSize = -1;
+        QByteArray idleTag; // IDLE running: DONE ends it
     };
 
     void onRead(QTcpSocket *s)
@@ -131,6 +149,16 @@ private:
                 return;
             const QByteArray line = c.buffer.left(nl);
             c.buffer.remove(0, nl + 2);
+            if (!c.idleTag.isEmpty()) {
+                if (line.toUpper() == "DONE") {
+                    log.append("DONE");
+                    s->write(c.idleTag + " OK idle done\r\n");
+                    c.idleTag.clear();
+                } else {
+                    s->write("* BAD expected DONE\r\n");
+                }
+                continue;
+            }
             command(s, c, line);
         }
     }
@@ -211,6 +239,9 @@ private:
             ok();
         } else if (cmd == "NOOP") {
             ok();
+        } else if (cmd == "IDLE" && capabilities.contains("IDLE")) {
+            c.idleTag = tag;
+            s->write("+ idling\r\n");
         } else if (cmd == "SELECT" || cmd == "EXAMINE") {
             const QByteArray name = unquote(rest.mid(cmd.size() + 1));
             if (!boxes.contains(name)) {

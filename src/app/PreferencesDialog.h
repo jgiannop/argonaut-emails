@@ -15,7 +15,7 @@ class QStackedWidget;
 // it is and the last section are kept). Changes apply at once, as in GNOME
 // apps and Argonaut: no OK or Cancel.
 //
-// General: keep running in the tray, how often to check for mail, the text
+// General: keep running in the tray, new mail at once (push), how often to look again, the text
 // of the newest messages fetched ahead. Appearance: the themes and where the
 // message pane goes, each drawn small. Accounts: the list, with Add,
 // Settings and Remove. Claude & Extensions: the key, the model and what was
@@ -48,16 +48,19 @@ public:
     QComboBox *checkEvery() const { return m_checkEvery; }
     QCheckBox *trayCheck() const { return m_tray; }
     QCheckBox *fetchAheadCheck() const { return m_fetchAhead; }
+    QCheckBox *pushCheck() const { return m_push; }
     QButtonGroup *paneGroup() const { return m_pane; }
 
     // The settings it keeps, read where they are used.
     static int checkMinutes();     // "mail/checkMinutes", 5
     static bool fetchAhead();      // "mail/fetchAhead", true
+    static bool push();            // "mail/push", true: IMAP IDLE
 
 signals:
     void keepInTrayChanged(bool keep);
     void checkMinutesChanged(int minutes);
     void fetchAheadChanged(bool on);
+    void pushChanged(bool on);
     void messageBesideChanged(bool beside);
     void addAccountRequested();
     void editAccountRequested(const QString &accountId);
@@ -84,6 +87,7 @@ private:
     QCheckBox *m_tray = nullptr;
     QComboBox *m_checkEvery = nullptr;
     QCheckBox *m_fetchAhead = nullptr;
+    QCheckBox *m_push = nullptr;
     QButtonGroup *m_pane = nullptr;
     QListWidget *m_accounts = nullptr;
     QLabel *m_noAccounts = nullptr;

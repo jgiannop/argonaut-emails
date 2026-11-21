@@ -70,6 +70,17 @@ public:
     // A dead one fails (`failed` first), then `done(false)`.
     void probe(int timeoutMs, std::function<void(bool alive)> done);
 
+    // IDLE (RFC 2177), on a selected folder: the server tells at once what
+    // changes there. Each untagged response that comes meanwhile goes to
+    // `heard` ("* 6 EXISTS"); no timeout runs while idling (the owner
+    // renews it). `done` when it ends: after stopIdle(), the server's OK; on
+    // a lost line an empty status. Only when the server has IDLE.
+    void idle(std::function<void(const Imap::Response &response)> heard, Done done);
+    // Ends the IDLE ("DONE"); its OK must come within the timeout, so this
+    // is also how a quiet line is found dead.
+    void stopIdle();
+    bool isIdling() const { return m_idling || m_idleWaiting; }
+
 signals:
     void ready();
     void failed(const QString &message);
@@ -84,6 +95,7 @@ private:
         QByteArray tag;
         QByteArray line;
         QByteArray continuation; // sent on "+" (AUTHENTICATE without SASL-IR)
+        bool idle = false;       // IDLE: "+" means it is idling, nothing is sent back
         Done done;
         QList<Imap::Response> untagged;
     };
@@ -111,4 +123,8 @@ private:
     QTimer m_timer;
     int m_timeoutMs = 60000;
     qint64 m_lastHeard = 0;
+    std::function<void(const Imap::Response &)> m_heard; // while idling
+    bool m_idleWaiting = false; // IDLE sent, "+" not come yet
+    bool m_idling = false;      // "+" came: DONE ends it
+    bool m_stopWhenIdling = false; // stopIdle() before the "+"
 };

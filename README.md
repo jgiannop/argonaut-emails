@@ -4,7 +4,7 @@ An email client for the desktop, like Thunderbird, written in C++17 with Qt 6
 Widgets: the same technology and the same look as
 [Argonaut](https://github.com/jgiannop/argonaut), the file manager.
 
-Version 0.3.0: Preferences (Edit → Preferences…) and a new About window; before it, the tray, messages that open at once, and many attachments on several lines.
+Version 0.3.1: new mail shows at once (IMAP IDLE); 0.3.0: Preferences (Edit → Preferences…) and a new About window.
 
 ## What it does
 
@@ -29,8 +29,9 @@ Version 0.3.0: Preferences (Edit → Preferences…) and a new About window; bef
 - **Keeping things in sync**: messages read, starred or deleted here are
   changed on the server, and changes made elsewhere show up here. Opened
   messages are kept on this computer, so they open again without the
-  network. It checks for new mail every five minutes (Preferences → General
-  changes it), and F5 checks now.
+  network. New mail in the inbox shows at once: the server tells (IMAP
+  IDLE, which Gmail and most servers have). Every folder is looked at again
+  every five minutes (Preferences → General changes both), and F5 looks now.
 - **Delete** moves a message to the account's Trash.
 - **Themes**: Argonaut's themes, including theme files from
   `~/.local/share/argonaut/themes`.
@@ -77,7 +78,7 @@ Each [release](https://github.com/jgiannop/argonaut-emails/releases) has a
 your system and install it with apt, which also installs what it needs:
 
 ```bash
-sudo apt install ./argonaut-emails_0.3.0_ubuntu24.04_amd64.deb
+sudo apt install ./argonaut-emails_0.3.1_ubuntu24.04_amd64.deb
 ```
 
 It appears in the applications as **Argonaut Emails**, with its icon: an

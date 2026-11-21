@@ -435,6 +435,83 @@ private slots:
         QCOMPARE(list.size(), 1);
         QCOMPARE(list.first().subject, QStringLiteral("Message 9"));
     }
+    // Push: the server says a message came, and it is in the store in a
+    // moment, without waiting for the five-minute look.
+    void newMailIsPushed()
+    {
+        FakeImap server;
+        server.capabilities += " IDLE";
+        server.add("INBOX", mail(1));
+        MailStore store(QDir::homePath() + QStringLiteral("/push.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.setPollInterval(60 * 60 * 1000);
+        sync.setPrefetch(0);
+        sync.setPush(true);
+        sync.start();
+        waitIdle(sync);
+        QTRY_COMPARE(server.idling(), 1);
+        QVERIFY(sync.isPushing());
+        QVERIFY(server.log.contains("EXAMINE INBOX"));
+
+        server.add("INBOX", mail(2));
+        QElapsedTimer timer;
+        timer.start();
+        server.announce();
+        QTRY_COMPARE_WITH_TIMEOUT(store.messages(account().id, "INBOX").size(), 2, 5000);
+        QVERIFY(timer.elapsed() < 3000);
+        QCOMPARE(server.idling(), 1); // still waiting for the next
+
+        sync.setPush(false);
+        QTRY_COMPARE(server.idling(), 0);
+        QVERIFY(!sync.isPushing());
+    }
+
+    // The IDLE is renewed now and then (DONE, then IDLE again); a line that
+    // died (a sleep, another network) is replaced, and what came meanwhile read.
+    void pushIsRenewedAndReplaced()
+    {
+        FakeImap server;
+        server.capabilities += " IDLE";
+        server.add("INBOX", mail(1));
+        MailStore store(QDir::homePath() + QStringLiteral("/pushagain.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.setPollInterval(60 * 60 * 1000);
+        sync.setPrefetch(0);
+        sync.setTimeouts(300, 500, 20000);
+        sync.setPushTimings(400, 500, 200);
+        sync.setPush(true);
+        sync.start();
+        waitIdle(sync);
+        QTRY_COMPARE(server.idling(), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(server.log.contains("DONE"), 3000);
+        QTRY_COMPARE(server.idling(), 1);
+        const int connections = server.connections();
+
+        server.goDeaf();
+        server.add("INBOX", mail(2)); // nobody can tell it
+        QTRY_VERIFY_WITH_TIMEOUT(server.connections() > connections && server.idling() == 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(store.messages(account().id, "INBOX").size(), 2, 10000);
+        sync.setPush(false);
+    }
+
+    // A server without IDLE: no IDLE sent, the regular looks only.
+    void noIdleNoPush()
+    {
+        FakeImap server;
+        server.add("INBOX", mail(1));
+        MailStore store(QDir::homePath() + QStringLiteral("/nopush.sqlite"));
+        Sync sync(account(), &store);
+        sync.setSettings(settingsFor(server));
+        sync.setPrefetch(0);
+        sync.setPush(true);
+        sync.start();
+        waitIdle(sync);
+        QTest::qWait(300);
+        QVERIFY(!server.loggedCommand("IDLE"));
+        QVERIFY(!sync.isPushing());
+    }
 };
 
 MAIL_TEST_MAIN(TestSync, QCoreApplication)

@@ -437,10 +437,17 @@ void MainWindow::startAccounts()
 {
     for (const Account &a : Account::all()) {
         if (!m_syncs.contains(a.id))
-            addSync(new Sync(a, m_store, this));
+            addSync(newSync(a));
     }
     if (Account::all().isEmpty())
         m_view->showNote(tr("Add your mail account to start: File → Add Account…"));
+}
+
+Sync *MainWindow::newSync(const Account &account)
+{
+    auto *sync = new Sync(account, m_store, this);
+    sync->setPush(PreferencesDialog::push()); // tests' own syncs (addSync) don't push
+    return sync;
 }
 
 void MainWindow::addSync(Sync *sync)
@@ -654,7 +661,7 @@ void MainWindow::addAccount()
         return;
     const Account a = dialog.account();
     m_folders->reload();
-    addSync(new Sync(a, m_store, this));
+    addSync(newSync(a));
     m_view->showNote(tr("Choose a message to read it."));
     if (m_preferences)
         m_preferences->reloadAccounts();
@@ -683,7 +690,7 @@ void MainWindow::editAccountById(const QString &id)
     if (dialog.exec() != QDialog::Accepted)
         return;
     m_folders->reload();
-    addSync(new Sync(dialog.account(), m_store, this)); // the new settings
+    addSync(newSync(dialog.account())); // the new settings
     if (m_preferences)
         m_preferences->reloadAccounts();
 }
@@ -872,6 +879,10 @@ void MainWindow::showPreferences()
     connect(p, &PreferencesDialog::fetchAheadChanged, this, [this](bool on) {
         for (Sync *sync : std::as_const(m_syncs))
             sync->setPrefetch(on ? Sync::Prefetch : 0);
+    });
+    connect(p, &PreferencesDialog::pushChanged, this, [this](bool on) {
+        for (Sync *sync : std::as_const(m_syncs))
+            sync->setPush(on);
     });
     connect(p, &PreferencesDialog::messageBesideChanged, this, &MainWindow::setMessageBeside);
     connect(p, &PreferencesDialog::addAccountRequested, this, &MainWindow::addAccount);

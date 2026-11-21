@@ -85,6 +85,8 @@ QList<ImapClient::Pending> ImapClient::shutDown()
     m_buffer.clear();
     m_capabilities.clear();
     m_busy = false;
+    m_idling = m_idleWaiting = m_stopWhenIdling = false;
+    m_heard = nullptr;
     if (m_socket) {
         m_socket->disconnect(this);
         m_socket->abort();
@@ -169,6 +171,37 @@ void ImapClient::send(const QByteArray &line, const QByteArray &continuation, Do
     sendNext();
 }
 
+void ImapClient::idle(std::function<void(const Imap::Response &response)> heard, Done done)
+{
+    Pending p;
+    p.line = "IDLE";
+    p.idle = true;
+    p.done = std::move(done);
+    // Whoever is idling now listens; one IDLE at a time on a connection.
+    m_heard = std::move(heard);
+    m_idleWaiting = true;
+    m_stopWhenIdling = false;
+    if (m_state != State::Ready) {
+        m_waiting.append(p);
+        return;
+    }
+    m_queue.append(p);
+    sendNext();
+}
+
+void ImapClient::stopIdle()
+{
+    if (m_idleWaiting) {
+        m_stopWhenIdling = true; // DONE as soon as the "+" comes
+        return;
+    }
+    if (!m_idling || !m_socket)
+        return;
+    m_idling = false;
+    m_socket->write("DONE\r\n");
+    m_timer.start(m_timeoutMs); // the OK must come: else the line is gone
+}
+
 void ImapClient::sendNext()
 {
     if (m_busy || m_queue.isEmpty() || !m_socket)
@@ -214,7 +247,8 @@ void ImapClient::readCapabilities(const Imap::Response &response)
 
 void ImapClient::handle(const Imap::Response &response)
 {
-    m_timer.start(m_timeoutMs); // it is talking
+    if (!m_idling)
+        m_timer.start(m_timeoutMs); // it is talking
     readCapabilities(response);
     if (m_state == State::Greeting) {
         if (response.isUntagged() && response.status == "BYE") {
@@ -236,6 +270,14 @@ void ImapClient::handle(const Imap::Response &response)
         return;
     }
     if (response.isContinuation()) {
+        if (!m_queue.isEmpty() && m_busy && m_queue.first().idle) {
+            m_idleWaiting = false;
+            m_idling = true;
+            m_timer.stop(); // quiet is what idling is
+            if (m_stopWhenIdling)
+                stopIdle();
+            return;
+        }
         if (!m_queue.isEmpty() && m_busy && !m_queue.first().continuation.isEmpty()) {
             m_socket->write(m_queue.first().continuation + "\r\n");
             m_queue.first().continuation.clear();
@@ -249,7 +291,10 @@ void ImapClient::handle(const Imap::Response &response)
             fail(response.text.isEmpty() ? tr("The server ended the connection") : response.text);
             return;
         }
-        if (m_busy && !m_queue.isEmpty())
+        if (m_busy && !m_queue.isEmpty() && m_queue.first().idle) {
+            if (m_heard)
+                m_heard(response);
+        } else if (m_busy && !m_queue.isEmpty())
             m_queue.first().untagged.append(response);
         else
             emit unsolicited(response);
@@ -261,6 +306,10 @@ void ImapClient::handle(const Imap::Response &response)
     Pending p = m_queue.takeFirst();
     m_busy = false;
     m_timer.stop();
+    if (p.idle) {
+        m_idling = m_idleWaiting = m_stopWhenIdling = false;
+        m_heard = nullptr;
+    }
     Result result;
     result.status = response.status;
     result.ok = response.status == "OK";

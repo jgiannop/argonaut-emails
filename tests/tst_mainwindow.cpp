@@ -458,6 +458,9 @@ private slots:
         // General: written where they are read.
         prefs->checkEvery()->setCurrentIndex(prefs->checkEvery()->findData(10));
         QCOMPARE(PreferencesDialog::checkMinutes(), 10);
+        QVERIFY(PreferencesDialog::push() && prefs->pushCheck()->isChecked());
+        prefs->pushCheck()->setChecked(false);
+        QVERIFY(!PreferencesDialog::push());
         prefs->fetchAheadCheck()->setChecked(false);
         QVERIFY(!PreferencesDialog::fetchAhead());
         prefs->trayCheck()->setChecked(false);

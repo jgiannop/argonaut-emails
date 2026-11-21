@@ -125,6 +125,36 @@ Sync::Sync(const Account &account, MailStore *store, QObject *parent)
         runReads();
     });
     connect(&m_reader, &ImapClient::failed, this, &Sync::readerFailed);
+    m_push.setTimeout(15 * 1000); // DONE's answer, or the line is gone
+    connect(&m_push, &ImapClient::ready, this, [this] {
+        m_pushOpening = false;
+        if (!m_push.hasCapability("IDLE")) {
+            m_push.close(); // the five-minute look only
+            return;
+        }
+        m_pushRetryMs = m_pushRetryFirstMs;
+        m_push.command("EXAMINE INBOX", [this](const ImapClient::Result &r) {
+            if (r.status.isEmpty())
+                return; // the line went: pushFailed
+            if (!r.ok) {
+                m_push.close();
+                return;
+            }
+            if (m_pushMissed) {
+                m_pushMissed = false;
+                syncFolder("INBOX"); // what came while it was down
+            }
+            enterIdle();
+        });
+    });
+    connect(&m_push, &ImapClient::failed, this, [this] { pushFailed(); });
+    m_pushRetry.setSingleShot(true);
+    connect(&m_pushRetry, &QTimer::timeout, this, &Sync::startPush);
+    m_pushCheck.setSingleShot(true);
+    m_pushCheck.setInterval(300);
+    connect(&m_pushCheck, &QTimer::timeout, this, [this] { syncFolder("INBOX"); });
+    m_pushWatch.setInterval(60 * 1000);
+    connect(&m_pushWatch, &QTimer::timeout, this, &Sync::pushTick);
     m_poll.setInterval(5 * 60 * 1000);
     connect(&m_poll, &QTimer::timeout, this, [this] {
         if (!isBusy())
@@ -156,6 +186,86 @@ void Sync::start()
     const QByteArray inbox = "INBOX";
     syncFolder(inbox);
     m_poll.start();
+    if (m_pushOn)
+        startPush();
+}
+
+void Sync::setPush(bool on)
+{
+    if (on == m_pushOn)
+        return;
+    m_pushOn = on;
+    if (on) {
+        if (m_poll.isActive()) // started already
+            startPush();
+        return;
+    }
+    m_pushRetry.stop();
+    m_pushWatch.stop();
+    m_pushCheck.stop();
+    m_pushOpening = false;
+    m_push.close();
+}
+
+void Sync::setPushTimings(int renewMs, int answerMs, int retryMs)
+{
+    m_pushRenewMs = renewMs;
+    m_push.setTimeout(answerMs);
+    m_pushRetryFirstMs = m_pushRetryMs = retryMs;
+    m_pushWatch.setInterval(qMin(60 * 1000, qMax(50, renewMs / 2)));
+}
+
+void Sync::startPush()
+{
+    if (!m_pushOn || m_pushOpening || m_push.isReady())
+        return;
+    m_pushOpening = true;
+    m_lastTick = QDateTime::currentMSecsSinceEpoch();
+    m_pushWatch.start();
+    m_push.open(settings());
+}
+
+void Sync::enterIdle()
+{
+    m_idleSince = QDateTime::currentMSecsSinceEpoch();
+    m_push.idle(
+        [this](const Imap::Response &r) {
+            // "* 6 EXISTS", "* 3 EXPUNGE", "* 4 FETCH (FLAGS …)": the inbox changed.
+            if (r.isUntagged() && r.values.size() >= 2
+                && (r.values.at(1).is("EXISTS") || r.values.at(1).is("EXPUNGE") || r.values.at(1).is("FETCH")))
+                m_pushCheck.start();
+        },
+        [this](const ImapClient::Result &r) {
+            if (r.status.isEmpty() || !m_pushOn)
+                return; // the line went (pushFailed), or push was switched off
+            if (!r.ok) {
+                m_push.close(); // the server won't: the five-minute look only
+                return;
+            }
+            enterIdle(); // renewed
+        });
+}
+
+void Sync::pushTick()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    // Ticks a minute apart by the wall clock: a long gap is a sleep, and the
+    // line is likely dead. Renewing asks: a dead one fails in seconds.
+    const bool slept = now - m_lastTick > 2 * m_pushWatch.interval() + 30 * 1000;
+    m_lastTick = now;
+    if (m_push.isIdling() && (slept || now - m_idleSince >= m_pushRenewMs))
+        m_push.stopIdle();
+}
+
+void Sync::pushFailed()
+{
+    m_pushOpening = false;
+    m_pushCheck.stop();
+    if (!m_pushOn)
+        return;
+    m_pushMissed = true;
+    m_pushRetry.start(m_pushRetryMs);
+    m_pushRetryMs = qMin(m_pushRetryMs * 2, 5 * 60 * 1000);
 }
 
 void Sync::syncAll()
