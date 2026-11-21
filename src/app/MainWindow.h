@@ -2,6 +2,7 @@
 
 #include "Extensions.h"
 #include "MailStore.h"
+#include "PreferencesDialog.h"
 #include "Theme.h"
 
 #include <QHash>
@@ -55,6 +56,11 @@ public:
     void showFromTray();
     // File → Quit: really, even with the tray (closing the window only hides it then).
     void quit();
+    // Edit → Preferences… (Ctrl+,): one window, raised if it is open.
+    void showPreferences();
+    PreferencesDialog *preferences() const { return m_preferences; }
+    // Help → About Argonaut Emails.
+    void showAbout();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -77,6 +83,8 @@ private:
     void addAccount();
     void editAccount();
     void removeAccount();
+    void editAccountById(const QString &id);
+    void removeAccountById(const QString &id);
     void updateActions();
     QString chosenAccount() const; // the one chosen in the tree, else the only one
     void applyTheme();
@@ -134,6 +142,8 @@ private:
     QAction *m_extensionsAct = nullptr;
     QAction *m_claudeAct = nullptr;
     QAction *m_reportsAct = nullptr;
+    QAction *m_prefsAct = nullptr;
+    QPointer<PreferencesDialog> m_preferences;
     QMenu *m_themeMenu = nullptr;
     QHash<QString, QMenu *> m_extensionMenus; // "file", "edit", "view", "message"
     CommandPalette *m_palette = nullptr;

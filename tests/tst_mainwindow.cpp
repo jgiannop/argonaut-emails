@@ -1,3 +1,4 @@
+#include "AboutDialog.h"
 #include "Account.h"
 #include "CommandPalette.h"
 #include "ComposeWindow.h"
@@ -9,18 +10,24 @@
 #include "MessageList.h"
 #include "MessageView.h"
 #include "Passwords.h"
+#include "PreferencesDialog.h"
 #include "RecentPopup.h"
 #include "Sync.h"
 #include "TestSupport.h"
 #include "TrayIcon.h"
 
 #include <QApplication>
+#include <QButtonGroup>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QStackedWidget>
 #include <QDir>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QScrollBar>
+#include <QSettings>
 #include <QSystemTrayIcon>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -405,6 +412,96 @@ private slots:
             labels << l->text();
         QVERIFY(labels.contains(QStringLiteral("Last week in your mail")));
         QVERIFY(labels.contains(QStringLiteral("By Claude Opus 5.5 from 3 messages")));
+    }
+
+    void preferencesAndAbout()
+    {
+        for (const Account &old : Account::all())
+            Account::remove(old.id);
+        MailStore store(QDir::homePath() + QStringLiteral("/prefs.sqlite"));
+        MainWindow window(&store);
+        window.resize(1200, 800);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        // Saved after the window started its accounts: nothing connects anywhere.
+        Account a;
+        a.email = QStringLiteral("maria@example.com");
+        a.name = QStringLiteral("Maria");
+        a.imapHost = QStringLiteral("imap.example.com");
+        a.smtpHost = QStringLiteral("smtp.example.com");
+        Account::save(a);
+
+        window.showPreferences();
+        PreferencesDialog *prefs = window.preferences();
+        QVERIFY(prefs && prefs->isVisible());
+        window.showPreferences(); // the same window again, not a second
+        QCOMPARE(window.findChildren<PreferencesDialog *>().size(), 1);
+
+        // The sections at the left, the page at the right, a divider between.
+        QCOMPARE(prefs->splitter()->orientation(), Qt::Horizontal);
+        QCOMPARE(prefs->splitter()->widget(0), prefs->sections());
+        QCOMPARE(prefs->sections()->count(), int(PreferencesDialog::PageCount));
+        const QList<int> sizes = prefs->splitter()->sizes();
+        QVERIFY(sizes.at(0) >= 150 && sizes.at(1) > sizes.at(0));
+        prefs->sections()->setCurrentRow(PreferencesDialog::Appearance);
+        QCOMPARE(prefs->pages()->currentIndex(), int(PreferencesDialog::Appearance));
+
+        // Appearance: the message pane, both ways round.
+        prefs->paneGroup()->button(1)->click();
+        QVERIFY(window.besideAction()->isChecked());
+        for (QAction *action : window.findChildren<QAction *>()) {
+            if (action->text() == QStringLiteral("Below the List"))
+                action->trigger();
+        }
+        QCOMPARE(prefs->paneGroup()->checkedId(), 0);
+
+        // General: written where they are read.
+        prefs->checkEvery()->setCurrentIndex(prefs->checkEvery()->findData(10));
+        QCOMPARE(PreferencesDialog::checkMinutes(), 10);
+        prefs->fetchAheadCheck()->setChecked(false);
+        QVERIFY(!PreferencesDialog::fetchAhead());
+        prefs->trayCheck()->setChecked(false);
+        QVERIFY(!QSettings().value(QStringLiteral("window/keepInTray")).toBool());
+
+        // Accounts: the list, made again when one goes.
+        prefs->reloadAccounts();
+        QCOMPARE(prefs->accountList()->count(), 1);
+        QVERIFY(prefs->accountList()->item(0)->text().contains(QStringLiteral("maria@example.com")));
+        if (qEnvironmentVariableIsSet("MAIL_TEST_GRAB_PREFS")) {
+            const QString base = qEnvironmentVariable("MAIL_TEST_GRAB_PREFS");
+            for (int page = 0; page < PreferencesDialog::PageCount; ++page) {
+                prefs->showPage(page);
+                QTest::qWait(100);
+                prefs->grab().save(base + QStringLiteral("-%1.png").arg(page));
+            }
+        }
+        Account::remove(a.id);
+        prefs->reloadAccounts();
+        QCOMPARE(prefs->accountList()->count(), 0);
+
+        // The page and the divider are kept for next time.
+        prefs->showPage(PreferencesDialog::ClaudePage);
+        prefs->close();
+        QTRY_VERIFY(!window.preferences());
+        window.showPreferences();
+        QCOMPARE(window.preferences()->pages()->currentIndex(), int(PreferencesDialog::ClaudePage));
+        window.preferences()->close();
+
+        // About: the banner and three pages; the details for a bug report.
+        window.showAbout();
+        auto *about = window.findChild<AboutDialog *>();
+        QVERIFY(about && about->isVisible());
+        QCOMPARE(about->pages()->count(), 3);
+        QVERIFY(AboutDialog::systemDetails().contains(QStringLiteral("Argonaut Emails: " MAIL_VERSION)));
+        if (qEnvironmentVariableIsSet("MAIL_TEST_GRAB_ABOUT")) {
+            QTest::qWait(100);
+            about->grab().save(qEnvironmentVariable("MAIL_TEST_GRAB_ABOUT"));
+            about->pages()->setCurrentIndex(1);
+            QTest::qWait(50);
+            QString second = qEnvironmentVariable("MAIL_TEST_GRAB_ABOUT");
+            about->grab().save(second.replace(QStringLiteral(".png"), QStringLiteral("-system.png")));
+        }
+        about->close();
     }
 
     void themeChangesAtOnce()

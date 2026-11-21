@@ -4,7 +4,7 @@ An email client for the desktop, like Thunderbird, written in C++17 with Qt 6
 Widgets: the same technology and the same look as
 [Argonaut](https://github.com/jgiannop/argonaut), the file manager.
 
-Version 0.2.1: the tray, messages that open at once, and many attachments on several lines.
+Version 0.3.0: Preferences (Edit → Preferences…) and a new About window; before it, the tray, messages that open at once, and many attachments on several lines.
 
 ## What it does
 
@@ -29,7 +29,8 @@ Version 0.2.1: the tray, messages that open at once, and many attachments on sev
 - **Keeping things in sync**: messages read, starred or deleted here are
   changed on the server, and changes made elsewhere show up here. Opened
   messages are kept on this computer, so they open again without the
-  network. It checks for new mail every five minutes, and F5 checks now.
+  network. It checks for new mail every five minutes (Preferences → General
+  changes it), and F5 checks now.
 - **Delete** moves a message to the account's Trash.
 - **Themes**: Argonaut's themes, including theme files from
   `~/.local/share/argonaut/themes`.
@@ -40,6 +41,10 @@ Version 0.2.1: the tray, messages that open at once, and many attachments on sev
   popup of your newest messages, ten more each time you scroll to its end;
   a click on one opens it. For Gmail the number and the popup are those of
   Primary.
+- **Preferences** (Edit → Preferences…, Ctrl+,): the sections at the left
+  (General, Appearance, Accounts, Claude & Extensions), the chosen one at
+  the right; changes apply at once. The themes and the message pane are
+  shown as small drawings of the window.
 - **Command palette** (Ctrl+Shift+P), as in Argonaut: type a few letters of
   any command and press Enter.
 - **Extensions**, as in Argonaut: small programs that add commands (Edit →
@@ -72,7 +77,7 @@ Each [release](https://github.com/jgiannop/argonaut-emails/releases) has a
 your system and install it with apt, which also installs what it needs:
 
 ```bash
-sudo apt install ./argonaut-emails_0.2.1_ubuntu24.04_amd64.deb
+sudo apt install ./argonaut-emails_0.3.0_ubuntu24.04_amd64.deb
 ```
 
 It appears in the applications as **Argonaut Emails**, with its icon: an

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(argonaut-emails VERSION 0.2.1 LANGUAGES CXX)
+project(argonaut-emails VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,8 @@ qt_add_library(mail_app STATIC
     src/app/ExtensionMenu.cpp src/app/ExtensionMenu.h
     src/app/ExtensionsDialog.cpp src/app/ExtensionsDialog.h
     src/app/FlowLayout.cpp src/app/FlowLayout.h
+    src/app/AboutDialog.cpp src/app/AboutDialog.h
+    src/app/PreferencesDialog.cpp src/app/PreferencesDialog.h
     src/app/FolderTree.cpp src/app/FolderTree.h
     src/app/MailWebView.cpp src/app/MailWebView.h
     src/app/MainWindow.cpp src/app/MainWindow.h

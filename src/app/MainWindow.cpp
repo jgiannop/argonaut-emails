@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "AboutDialog.h"
 #include "Account.h"
 #include "AccountDialog.h"
 #include "CommandPalette.h"
@@ -9,6 +10,7 @@
 #include "FolderTree.h"
 #include "MessageList.h"
 #include "MessageView.h"
+#include "PreferencesDialog.h"
 #include "RecentPopup.h"
 #include "StyleSheet.h"
 #include "Sync.h"
@@ -194,6 +196,7 @@ void MainWindow::buildActions()
     m_extensionsAct = make(tr("Extensions…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_X), &MainWindow::showExtensions);
     m_claudeAct = make(tr("Claude…"), QKeySequence(), &MainWindow::showClaudeSettings);
     m_reportsAct = make(tr("Claude Reports"), QKeySequence(), &MainWindow::openClaudeReports);
+    m_prefsAct = make(tr("Preferences…"), QKeySequence(Qt::CTRL | Qt::Key_Comma), &MainWindow::showPreferences);
     m_searchAct = new QAction(tr("Search"), this);
     m_searchAct->setShortcut(QKeySequence::Find);
     connect(m_searchAct, &QAction::triggered, this, [this] {
@@ -229,6 +232,8 @@ void MainWindow::buildMenus()
     edit->addSeparator();
     edit->addAction(m_extensionsAct);
     edit->addAction(m_claudeAct);
+    edit->addSeparator();
+    edit->addAction(m_prefsAct);
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     QMenu *pane = view->addMenu(tr("Message Pane"));
@@ -250,7 +255,11 @@ void MainWindow::buildMenus()
     m_trayAct->setCheckable(true);
     m_trayAct->setChecked(QSettings().value(QStringLiteral("window/keepInTray"), true).toBool());
     m_trayAct->setToolTip(tr("Closing the window leaves Argonaut Emails in the system tray, checking for mail"));
-    connect(m_trayAct, &QAction::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("window/keepInTray"), on); });
+    connect(m_trayAct, &QAction::toggled, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("window/keepInTray"), on);
+        if (m_preferences)
+            m_preferences->setKeepInTray(on);
+    });
     view->addSeparator();
     view->addAction(m_paletteAct);
 
@@ -272,12 +281,7 @@ void MainWindow::buildMenus()
     }
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
-    help->addAction(tr("About Argonaut Emails"), this, [this] {
-        QMessageBox::about(this, tr("About Argonaut Emails"),
-                           tr("<b>Argonaut Emails</b> %1<br>An email client in Qt and C++, from the makers of Argonaut.<br>"
-                              "License: GPL-3.0-or-later")
-                               .arg(QStringLiteral(MAIL_VERSION)));
-    });
+    help->addAction(tr("About Argonaut Emails"), this, &MainWindow::showAbout);
 }
 
 void MainWindow::fillThemeMenu()
@@ -449,6 +453,12 @@ void MainWindow::addSync(Sync *sync)
     connect(sync, &Sync::error, this, [this](const QString &text) {
         statusBar()->showMessage(text + tr("  (File → Account Settings… to change it)"), 30000);
     });
+    // Preferences → General (tests keep their own: their settings have neither).
+    QSettings settings;
+    if (settings.contains(QStringLiteral("mail/checkMinutes")))
+        sync->setPollInterval(PreferencesDialog::checkMinutes() * 60 * 1000);
+    if (!PreferencesDialog::fetchAhead())
+        sync->setPrefetch(0);
     sync->start();
 }
 
@@ -646,6 +656,8 @@ void MainWindow::addAccount()
     m_folders->reload();
     addSync(new Sync(a, m_store, this));
     m_view->showNote(tr("Choose a message to read it."));
+    if (m_preferences)
+        m_preferences->reloadAccounts();
 }
 
 QString MainWindow::chosenAccount() const
@@ -659,7 +671,12 @@ QString MainWindow::chosenAccount() const
 
 void MainWindow::editAccount()
 {
-    const Account a = Account::byId(chosenAccount());
+    editAccountById(chosenAccount());
+}
+
+void MainWindow::editAccountById(const QString &id)
+{
+    const Account a = Account::byId(id);
     if (!a.isValid())
         return;
     AccountDialog dialog(a, this);
@@ -667,11 +684,18 @@ void MainWindow::editAccount()
         return;
     m_folders->reload();
     addSync(new Sync(dialog.account(), m_store, this)); // the new settings
+    if (m_preferences)
+        m_preferences->reloadAccounts();
 }
 
 void MainWindow::removeAccount()
 {
-    const Account a = Account::byId(chosenAccount());
+    removeAccountById(chosenAccount());
+}
+
+void MainWindow::removeAccountById(const QString &id)
+{
+    const Account a = Account::byId(id);
     if (!a.isValid())
         return;
     if (QMessageBox::question(this, tr("Remove Account"),
@@ -687,6 +711,8 @@ void MainWindow::removeAccount()
     updateTabs();
     m_view->showNote(Account::all().isEmpty() ? tr("Add your mail account to start: File → Add Account…") : tr("Choose a message to read it."));
     m_folders->reload();
+    if (m_preferences)
+        m_preferences->reloadAccounts();
 }
 
 void MainWindow::updateActions()
@@ -759,6 +785,8 @@ void MainWindow::setMessageBeside(bool beside)
 {
     m_besideAct->setChecked(beside);
     m_belowAct->setChecked(!beside);
+    if (m_preferences)
+        m_preferences->setMessageBeside(beside);
     if (beside == messageBeside())
         return;
     QSettings s;
@@ -818,4 +846,43 @@ void MainWindow::closeEvent(QCloseEvent *event)
     }
     saveSettings();
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::showAbout()
+{
+    auto *about = new AboutDialog(this); // deletes itself on closing
+    about->open();
+}
+
+void MainWindow::showPreferences()
+{
+    if (m_preferences) {
+        m_preferences->raise();
+        m_preferences->activateWindow();
+        return;
+    }
+    m_preferences = new PreferencesDialog(this);
+    m_preferences->setAttribute(Qt::WA_DeleteOnClose);
+    PreferencesDialog *p = m_preferences;
+    connect(p, &PreferencesDialog::keepInTrayChanged, m_trayAct, &QAction::setChecked);
+    connect(p, &PreferencesDialog::checkMinutesChanged, this, [this](int minutes) {
+        for (Sync *sync : std::as_const(m_syncs))
+            sync->setPollInterval(minutes * 60 * 1000);
+    });
+    connect(p, &PreferencesDialog::fetchAheadChanged, this, [this](bool on) {
+        for (Sync *sync : std::as_const(m_syncs))
+            sync->setPrefetch(on ? Sync::Prefetch : 0);
+    });
+    connect(p, &PreferencesDialog::messageBesideChanged, this, &MainWindow::setMessageBeside);
+    connect(p, &PreferencesDialog::addAccountRequested, this, &MainWindow::addAccount);
+    connect(p, &PreferencesDialog::editAccountRequested, this, &MainWindow::editAccountById);
+    connect(p, &PreferencesDialog::removeAccountRequested, this, &MainWindow::removeAccountById);
+    connect(p, &PreferencesDialog::claudeRequested, this, [this, p] {
+        showClaudeSettings();
+        if (m_preferences == p)
+            p->reloadClaude();
+    });
+    connect(p, &PreferencesDialog::extensionsRequested, this, &MainWindow::showExtensions);
+    connect(p, &PreferencesDialog::reportsRequested, this, &MainWindow::openClaudeReports);
+    p->show();
 }

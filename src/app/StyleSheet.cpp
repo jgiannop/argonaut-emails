@@ -71,6 +71,37 @@ QLineEdit#connectAddress, QLineEdit#claudeKey { background: @pathBg; color: @fg;
 QPushButton#prefButton { background: @pathBg; color: @fg; border: none; border-radius: 6px; padding: 7px 16px; }
 QPushButton#prefButton:hover { background: @hover; }
 QPushButton#prefButton:disabled { color: @dimFg; }
+QDialog#preferences, QStackedWidget#prefPages { background: @window; }
+QListWidget#prefSections { background: @sidebar; color: @fg; border: none; padding: 10px 6px; outline: 0; }
+QListWidget#prefSections::item { padding: 8px 8px; border-radius: 6px; margin: 1px 0; }
+QListWidget#prefSections::item:selected { background: @selected; color: @fg; }
+QListWidget#prefSections::item:hover:!selected { background: @hover; }
+QListWidget#prefAccounts { background: @pathBg; color: @fg; border: none; border-radius: 10px; padding: 6px; outline: 0; }
+QListWidget#prefAccounts::item { padding: 6px; border-radius: 6px; }
+QListWidget#prefAccounts::item:selected { background: @itemSelected; color: @fg; }
+QComboBox#prefCombo { background: @pathBg; color: @fg; border: none; border-radius: 6px; padding: 5px 10px; }
+QComboBox#prefCombo QAbstractItemView { background: @popup; color: @fg; selection-background-color: @hover; }
+QToolButton#themeCard { background: transparent; color: @fg; border: 2px solid transparent; border-radius: 12px; padding: 6px; }
+QToolButton#themeCard:hover { background: @hover; }
+QToolButton#themeCard:checked { border-color: @accent; }
+QDialog#aboutDialog { background: @window; }
+QLabel#aboutName { color: #ffffff; font-weight: bold; font-size: 28px; background: transparent; }
+QLabel#aboutVersion { background: rgba(255, 255, 255, 0.22); color: #ffffff; font-weight: bold; border-radius: 11px;
+    padding: 3px 12px; }
+QLabel#aboutTagline { color: rgba(255, 255, 255, 0.88); font-size: 14px; background: transparent; }
+QToolButton#aboutTab { background: transparent; color: @dimFg; border: none; border-radius: 14px; padding: 6px 16px; }
+QToolButton#aboutTab:hover { background: @hover; color: @fg; }
+QToolButton#aboutTab:checked { background: @pathBg; color: @fg; }
+QLabel#aboutText { color: @fg; }
+QLabel#aboutDim { color: @dimFg; }
+QWidget#aboutCard { background: @pathBg; border-radius: 10px; }
+QWidget#aboutCard QLabel { background: transparent; }
+QLabel#aboutCardHeading { color: @fg; font-weight: bold; }
+QLabel#aboutCardText { color: @dimFg; }
+QLabel#aboutLabel { color: @dimFg; }
+QLabel#aboutValue { color: @fg; }
+QPushButton#aboutClose { background: @accent; color: #ffffff; border: none; border-radius: 6px; padding: 7px 22px; font-weight: bold; }
+QPushButton#aboutClose:hover { background: @accentHover; }
 )");
     const QList<QPair<QString, QColor>> tokens{
         {QStringLiteral("@window"), t.window},   {QStringLiteral("@sidebar"), t.sidebar},
@@ -79,9 +110,10 @@ QPushButton#prefButton:disabled { color: @dimFg; }
         {QStringLiteral("@selected"), t.selected}, {QStringLiteral("@itemSelected"), t.itemSelected},
         {QStringLiteral("@pathBg"), t.pathBg},   {QStringLiteral("@popup"), t.popup},
         {QStringLiteral("@border"), t.border},   {QStringLiteral("@scrollHover"), t.scrollHover},
-        {QStringLiteral("@scroll"), t.scroll},   {QStringLiteral("@accent"), t.accent},
+        {QStringLiteral("@scroll"), t.scroll},   {QStringLiteral("@accentHover"), t.accent.lighter(112)},
+        {QStringLiteral("@accent"), t.accent},
     };
-    // Longer names first: @scrollHover before @scroll, @itemSelected before @selected.
+    // Longer names first: @scrollHover before @scroll, @itemSelected before @selected, @accentHover before @accent.
     for (const auto &token : tokens)
         css.replace(token.first, cssColor(token.second));
     return css;
