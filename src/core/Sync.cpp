@@ -2,6 +2,8 @@
 
 #include "Mime.h"
 
+#include <QDateTime>
+
 #include <algorithm>
 #include <memory>
 
@@ -113,9 +115,16 @@ Sync::Sync(const Account &account, MailStore *store, QObject *parent)
 {
     connect(&m_client, &ImapClient::ready, this, [this] {
         m_opening = false;
+        m_ready = true;
         runNext();
     });
     connect(&m_client, &ImapClient::failed, this, &Sync::connectFailed);
+    m_reader.setTimeout(20 * 1000); // one message: data comes, or the line is gone
+    connect(&m_reader, &ImapClient::ready, this, [this] {
+        m_readerOpening = false;
+        runReads();
+    });
+    connect(&m_reader, &ImapClient::failed, this, &Sync::readerFailed);
     m_poll.setInterval(5 * 60 * 1000);
     connect(&m_poll, &QTimer::timeout, this, [this] {
         if (!isBusy())
@@ -126,6 +135,19 @@ Sync::Sync(const Account &account, MailStore *store, QObject *parent)
 void Sync::setPollInterval(int ms)
 {
     m_poll.setInterval(ms);
+}
+
+void Sync::setTimeouts(int probeAfterMs, int probeTimeoutMs, int readerTimeoutMs)
+{
+    m_probeAfterMs = probeAfterMs;
+    m_probeTimeoutMs = probeTimeoutMs;
+    m_reader.setTimeout(readerTimeoutMs);
+}
+
+// Quiet for a while (by the wall clock: a sleep counts): ask before trusting it.
+bool Sync::isQuiet(const ImapClient &client) const
+{
+    return client.lastHeard() > 0 && QDateTime::currentMSecsSinceEpoch() - client.lastHeard() > m_probeAfterMs;
 }
 
 void Sync::start()
@@ -154,7 +176,10 @@ void Sync::syncFolder(const QByteArray &path)
             return;
     }
     m_looked.insert(path);
-    enqueue({tr("Checking %1").arg(Imap::decodeMailboxName(path)), [this, path](auto next) { readFolder(path, next); }, {}});
+    enqueue({tr("Checking %1").arg(Imap::decodeMailboxName(path)), [this, path](auto next) {
+                 readFolder(path, [this, path, next] { prefetch(path, next); });
+             },
+             {}});
 }
 
 void Sync::enqueue(Op op)
@@ -190,6 +215,15 @@ void Sync::runNext()
         return;
     }
     m_running = true;
+    if (isQuiet(m_client)) {
+        // Still there? A dead line fails here in seconds (connectFailed
+        // connects again, keeping what waits), not in the next command's minute.
+        m_client.probe(m_probeTimeoutMs, [this](bool) {
+            m_running = false;
+            runNext();
+        });
+        return;
+    }
     Op op = m_ops.takeFirst();
     emit status(op.what + QStringLiteral("…"));
     op.run([this] {
@@ -200,9 +234,22 @@ void Sync::runNext()
 
 void Sync::connectFailed(const QString &message)
 {
+    const bool lost = m_ready;
+    m_ready = false;
     m_opening = false;
-    m_running = false;
     m_selected.clear();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (lost && now - m_lastReconnect > 30 * 1000) {
+        // The line went (a sleep, another network): connect again and go on
+        // with what waits. The operation that was running hears that its
+        // command failed and moves on (runNext); the next check redoes it.
+        m_lastReconnect = now;
+        emit status(tr("Connecting to %1 again").arg(m_account.imapHost));
+        if (!m_running)
+            runNext();
+        return;
+    }
+    m_running = false;
     const QList<Op> dropped = m_ops;
     m_ops.clear();
     for (const Op &op : dropped) {
@@ -434,45 +481,135 @@ void Sync::fetchBody(const QByteArray &path, qint64 uid, BodyDone done)
         done(kept, QString());
         return;
     }
-    Op op;
-    op.what = tr("Opening the message");
-    op.urgent = true; // the user is waiting for it
-    op.failed = [done](const QString &e) { done({}, e); };
-    op.run = [this, path, uid, done](std::function<void()> next) {
-        auto fetch = [this, path, uid, done, next] {
-            m_client.command("UID FETCH " + QByteArray::number(uid) + " (UID BODY.PEEK[])", [this, path, uid, done, next](const ImapClient::Result &r) {
-                QByteArray raw;
-                for (const Imap::Response &u : r.untagged) {
-                    const Imap::Value *list = fetchList(u);
-                    const Imap::Value *id = list ? Imap::fetchItem(*list, "UID") : nullptr;
-                    if (!id || id->text.toLongLong() != uid)
-                        continue;
-                    if (const Imap::Value *body = itemStartingWith(*list, "BODY["))
-                        raw = body->text;
-                }
-                if (raw.isEmpty()) {
-                    done({}, r.ok ? tr("The message is no longer on the server") : r.text);
-                } else {
-                    m_store->setBody(m_account.id, path, uid, raw);
-                    done(raw, QString());
-                }
-                next();
-            });
-        };
-        if (m_selected == path) {
-            fetch();
-            return;
+    m_reads.append({path, uid, std::move(done), false});
+    runReads();
+}
+
+// ---------------------------------------------- the message connection ---
+
+void Sync::runReads()
+{
+    if (m_reading || m_reads.isEmpty())
+        return;
+    if (!m_reader.isReady()) {
+        if (!m_readerOpening) {
+            m_readerOpening = true;
+            m_readerSelected.clear();
+            m_reader.open(settings());
         }
-        select(path, [done, fetch, next](bool ok, const ImapClient::Result &r) {
-            if (!ok) {
-                done({}, r.text);
-                next();
+        return;
+    }
+    m_reading = true;
+    if (isQuiet(m_reader)) {
+        m_reader.probe(m_probeTimeoutMs, [this](bool alive) {
+            if (alive)
+                readOne(); // else readerFailed has it in hand
+        });
+        return;
+    }
+    readOne();
+}
+
+void Sync::readOne()
+{
+    const Read read = m_reads.first();
+    // Fetched meanwhile (a folder check fetches the newest): from the store.
+    const QByteArray kept = m_store->body(m_account.id, read.path, read.uid);
+    if (!kept.isEmpty()) {
+        finishRead(kept, QString());
+        return;
+    }
+    auto fetch = [this, read] {
+        m_reader.command("UID FETCH " + QByteArray::number(read.uid) + " (UID BODY.PEEK[])", [this, read](const ImapClient::Result &r) {
+            if (r.status.isEmpty())
+                return; // the line went: readerFailed tries again
+            QByteArray raw;
+            for (const Imap::Response &u : r.untagged) {
+                const Imap::Value *list = fetchList(u);
+                const Imap::Value *id = list ? Imap::fetchItem(*list, "UID") : nullptr;
+                if (!id || id->text.toLongLong() != read.uid)
+                    continue;
+                if (const Imap::Value *body = itemStartingWith(*list, "BODY["))
+                    raw = body->text;
+            }
+            if (raw.isEmpty()) {
+                finishRead({}, r.ok ? tr("The message is no longer on the server") : r.text);
                 return;
             }
-            fetch();
+            m_store->setBody(m_account.id, read.path, read.uid, raw);
+            finishRead(raw, QString());
         });
     };
-    enqueue(op);
+    if (m_readerSelected == read.path) {
+        fetch();
+        return;
+    }
+    bool ok = false;
+    const QByteArray name = Imap::quoted(read.path, &ok);
+    if (!ok) {
+        finishRead({}, tr("The folder's name can't be sent"));
+        return;
+    }
+    // EXAMINE: this connection only reads; the other one changes things.
+    m_reader.command("EXAMINE " + name, [this, read, fetch](const ImapClient::Result &r) {
+        if (r.status.isEmpty())
+            return; // the line went: readerFailed tries again
+        if (!r.ok) {
+            m_readerSelected.clear();
+            finishRead({}, r.text);
+            return;
+        }
+        m_readerSelected = read.path;
+        fetch();
+    });
+}
+
+void Sync::finishRead(const QByteArray &raw, const QString &error)
+{
+    const Read read = m_reads.takeFirst();
+    m_reading = false;
+    read.done(raw, error);
+    runReads();
+    if (!isBusy())
+        emit idle();
+}
+
+void Sync::readerFailed(const QString &message)
+{
+    m_readerOpening = false;
+    m_readerSelected.clear();
+    m_reading = false;
+    if (m_reads.isEmpty())
+        return;
+    if (!m_reads.first().retried) {
+        // Once more, on a new connection (the old one went quiet, or dropped).
+        m_reads.first().retried = true;
+        QTimer::singleShot(0, this, &Sync::runReads);
+        return;
+    }
+    const QList<Read> failed = m_reads;
+    m_reads.clear();
+    for (const Read &read : failed)
+        read.done({}, message);
+    if (!isBusy())
+        emit idle();
+}
+
+// After a check: the text of the newest messages that haven't been opened
+// (not big ones, not in the Trash or Spam), so they open from the store.
+void Sync::prefetch(const QByteArray &path, std::function<void()> next)
+{
+    const QString role = m_store->folder(m_account.id, path).role;
+    if (m_prefetch <= 0 || m_selected != path || role == QLatin1String("trash") || role == QLatin1String("junk")) {
+        next();
+        return;
+    }
+    const QList<qint64> uids = m_store->withoutBody(m_account.id, path, m_prefetch, PrefetchMaxBytes);
+    if (uids.isEmpty()) {
+        next();
+        return;
+    }
+    fetchBatch(path, std::make_shared<QList<qint64>>(uids), [](const QString &) {}, next);
 }
 
 void Sync::fetchBodies(const QByteArray &path, const QList<qint64> &uids, std::function<void(const QString &error)> done)

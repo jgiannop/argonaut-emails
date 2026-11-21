@@ -63,6 +63,12 @@ public:
 
     // How long a command may take before the connection is given up.
     void setTimeout(int ms) { m_timeoutMs = ms; }
+    // When the server last said something (ms since the epoch, by the wall
+    // clock: a computer that slept counts as time gone by).
+    qint64 lastHeard() const { return m_lastHeard; }
+    // A NOOP that must be answered within `timeoutMs`: is the line still there?
+    // A dead one fails (`failed` first), then `done(false)`.
+    void probe(int timeoutMs, std::function<void(bool alive)> done);
 
 signals:
     void ready();
@@ -91,6 +97,7 @@ private:
     void afterGreeting();
     void authenticate();
     void fail(const QString &message);
+    QList<Pending> shutDown(); // closes; what was waiting, for its callbacks
 
     QSslSocket *m_socket = nullptr;
     Settings m_settings;
@@ -103,4 +110,5 @@ private:
     QSet<QByteArray> m_capabilities;
     QTimer m_timer;
     int m_timeoutMs = 60000;
+    qint64 m_lastHeard = 0;
 };

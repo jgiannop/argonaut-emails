@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QMap>
 #include <QStringList>
+#include <QSet>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -78,6 +79,14 @@ public:
         }
         return nullptr;
     }
+    // The connections open now stop answering, as a line does after a sleep
+    // or a change of network (new ones work).
+    void goDeaf()
+    {
+        for (QTcpSocket *s : findChildren<QTcpSocket *>(QString(), Qt::FindDirectChildrenOnly))
+            m_deaf.insert(s);
+    }
+    int connections() const { return int(findChildren<QTcpSocket *>(QString(), Qt::FindDirectChildrenOnly).size()); }
     bool loggedCommand(const QByteArray &start) const
     {
         for (const QByteArray &l : log) {
@@ -101,6 +110,10 @@ private:
 
     void onRead(QTcpSocket *s)
     {
+        if (m_deaf.contains(s)) {
+            s->readAll(); // heard by nobody
+            return;
+        }
         Conn &c = m_conns[s];
         c.buffer += s->readAll();
         while (true) {
@@ -196,8 +209,10 @@ private:
             for (auto it = boxes.cbegin(); it != boxes.cend(); ++it)
                 s->write("* LIST (\\HasNoChildren" + (it->role.isEmpty() ? QByteArray() : ' ' + it->role) + ") \"/\" \"" + it.key() + "\"\r\n");
             ok();
-        } else if (cmd == "SELECT") {
-            const QByteArray name = unquote(rest.mid(7));
+        } else if (cmd == "NOOP") {
+            ok();
+        } else if (cmd == "SELECT" || cmd == "EXAMINE") {
+            const QByteArray name = unquote(rest.mid(cmd.size() + 1));
             if (!boxes.contains(name)) {
                 no("no such folder");
                 return;
@@ -207,7 +222,7 @@ private:
             s->write("* " + QByteArray::number(b.mails.size()) + " EXISTS\r\n");
             s->write("* OK [UIDVALIDITY " + QByteArray::number(b.uidValidity) + "] ok\r\n");
             s->write("* OK [UIDNEXT " + QByteArray::number(b.uidNext) + "] ok\r\n");
-            ok("[READ-WRITE] selected");
+            ok(cmd == "EXAMINE" ? "[READ-ONLY] examined" : "[READ-WRITE] selected");
         } else if (cmd == "FETCH") {
             const Box &b = boxes[c.selected];
             for (qint64 n : numbers(w.value(1), b.mails.size())) {
@@ -284,6 +299,7 @@ private:
 
     QTcpServer m_server;
     QHash<QTcpSocket *, Conn> m_conns;
+    QSet<QTcpSocket *> m_deaf;
 };
 
 class FakeSmtp : public QObject

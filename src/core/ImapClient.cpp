@@ -1,5 +1,6 @@
 #include "ImapClient.h"
 
+#include <QDateTime>
 #include <QHostAddress>
 #include <QSslSocket>
 
@@ -70,6 +71,15 @@ void ImapClient::open(const Settings &settings)
 
 void ImapClient::close()
 {
+    const QList<Pending> dropped = shutDown();
+    for (const Pending &p : dropped) {
+        if (p.done)
+            p.done(Result{});
+    }
+}
+
+QList<ImapClient::Pending> ImapClient::shutDown()
+{
     m_state = State::Closed;
     m_timer.stop();
     m_buffer.clear();
@@ -84,10 +94,17 @@ void ImapClient::close()
     QList<Pending> dropped = m_queue + m_waiting;
     m_queue.clear();
     m_waiting.clear();
-    for (const Pending &p : dropped) {
-        if (p.done)
-            p.done(Result{});
-    }
+    return dropped;
+}
+
+void ImapClient::probe(int timeoutMs, std::function<void(bool alive)> done)
+{
+    const int normal = m_timeoutMs;
+    m_timeoutMs = timeoutMs;
+    command("NOOP", [this, normal, done](const Result &r) {
+        m_timeoutMs = normal;
+        done(!r.status.isEmpty()); // any answer, even BAD: someone is there
+    });
 }
 
 void ImapClient::onConnected()
@@ -166,6 +183,7 @@ void ImapClient::sendNext()
 void ImapClient::onReadyRead()
 {
     m_buffer += m_socket->readAll();
+    m_lastHeard = QDateTime::currentMSecsSinceEpoch();
     if (m_timer.isActive())
         m_timer.start(m_timeoutMs); // data is coming: a big message on a slow line isn't a dead server
     QByteArray one;
@@ -349,6 +367,12 @@ void ImapClient::fail(const QString &message)
 {
     if (m_state == State::Closed)
         return;
-    close();
+    // The owner hears of it before the commands that were waiting do: it
+    // decides first whether to connect again and go on.
+    const QList<Pending> dropped = shutDown();
     emit failed(message);
+    for (const Pending &p : dropped) {
+        if (p.done)
+            p.done(Result{});
+    }
 }

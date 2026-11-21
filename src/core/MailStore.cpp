@@ -447,6 +447,22 @@ QByteArray MailStore::body(const QString &account, const QByteArray &path, qint6
     return q.next() ? q.value(0).toByteArray() : QByteArray();
 }
 
+QList<qint64> MailStore::withoutBody(const QString &account, const QByteArray &path, int limit, qint64 maxSize) const
+{
+    QList<qint64> out;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT uid FROM messages WHERE account = ? AND folder = ? AND body IS NULL AND size <= ?"
+                             " ORDER BY date DESC, uid DESC LIMIT ?"));
+    q.addBindValue(account);
+    q.addBindValue(path);
+    q.addBindValue(maxSize);
+    q.addBindValue(limit);
+    q.exec();
+    while (q.next())
+        out.append(q.value(0).toLongLong());
+    return out;
+}
+
 void MailStore::removeAccount(const QString &account)
 {
     for (const char *sql : {"DELETE FROM messages WHERE account = ?", "DELETE FROM folders WHERE account = ?"}) {

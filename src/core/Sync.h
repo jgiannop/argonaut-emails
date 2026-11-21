@@ -14,8 +14,14 @@
 // does what the user asks of the server (open a message, mark it read,
 // move it to the Trash, keep a copy of what was sent).
 //
-// One IMAP connection; what it does is a queue of operations, one at a
-// time, because each starts by selecting its folder. A folder is first
+// One IMAP connection for the folders: what it does is a queue of
+// operations, one at a time, because each starts by selecting its folder.
+// A second one only opens messages, so a message never waits for a folder
+// check. A connection that was quiet for a while is asked first whether it
+// is still there (after a sleep, a change of network): a dead one is
+// replaced at once, and what waited goes on, instead of a minute's wait.
+// After each folder check the newest messages' text is fetched, so most
+// messages open from the store. A folder is first
 // read as its newest `FirstFetch` messages, then only what is new, and the
 // flags of what is kept are looked at again (which is also how messages
 // deleted elsewhere go). It looks again every five minutes. On Gmail it
@@ -26,6 +32,8 @@ class Sync : public QObject
 
 public:
     static constexpr int FirstFetch = 500;
+    static constexpr int Prefetch = 30;                       // newest messages a folder check fetches the text of
+    static constexpr qint64 PrefetchMaxBytes = 512 * 1024;    // not bigger ones (attachments): those when opened
 
     Sync(const Account &account, MailStore *store, QObject *parent = nullptr);
 
@@ -33,6 +41,11 @@ public:
     // Tests: the client's settings instead of the account's (and the keyring's password).
     void setSettings(const ImapClient::Settings &settings) { m_settings = settings; m_haveSettings = true; }
     void setPollInterval(int ms);
+    // Tests: how many messages a check fetches the text of (0: none); when a
+    // quiet connection is checked, how long the check may take, and how long
+    // the message connection waits for an answer.
+    void setPrefetch(int count) { m_prefetch = count; }
+    void setTimeouts(int probeAfterMs, int probeTimeoutMs, int readerTimeoutMs);
 
     // Folders, then the inbox.
     void start();
@@ -53,7 +66,7 @@ public:
     // A copy of a message just sent, in the Sent folder (not for Gmail, which keeps one itself).
     void keepSent(const QByteArray &raw);
 
-    bool isBusy() const { return m_running || !m_ops.isEmpty(); }
+    bool isBusy() const { return m_running || !m_ops.isEmpty() || m_reading || !m_reads.isEmpty(); }
     QByteArray folderWithRole(const QString &role) const;
 
 signals:
@@ -73,6 +86,14 @@ private:
     void enqueue(Op op);
     void runNext();
     void connectFailed(const QString &message);
+    // The connection that opens messages.
+    void runReads();
+    void readOne();
+    void finishRead(const QByteArray &raw, const QString &error);
+    void readerFailed(const QString &message);
+    bool isQuiet(const ImapClient &client) const;
+    ImapClient::Settings settings() const { return m_haveSettings ? m_settings : m_account.imapSettings(); }
+    void prefetch(const QByteArray &path, std::function<void()> next);
     void select(const QByteArray &path, std::function<void(bool ok, const ImapClient::Result &result)> done);
     void listFolders(std::function<void()> next);
     void readFolder(const QByteArray &path, std::function<void()> next);
@@ -94,4 +115,23 @@ private:
     QByteArray m_selected;
     QSet<QByteArray> m_looked; // folders read since the start
     QTimer m_poll;
+    bool m_ready = false;       // the folder connection was logged in (a failure now is a lost line)
+    qint64 m_lastReconnect = 0; // at most one quiet reconnect in 30 s: no loop with a server that keeps dropping us
+
+    struct Read
+    {
+        QByteArray path;
+        qint64 uid = 0;
+        BodyDone done;
+        bool retried = false; // once more on a new connection, then the error
+    };
+    ImapClient m_reader;
+    QList<Read> m_reads;
+    bool m_reading = false;
+    bool m_readerOpening = false;
+    QByteArray m_readerSelected;
+
+    int m_prefetch = Prefetch;
+    int m_probeAfterMs = 90 * 1000;
+    int m_probeTimeoutMs = 10 * 1000;
 };

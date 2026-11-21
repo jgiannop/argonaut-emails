@@ -84,6 +84,8 @@ public:
 
     void setBody(const QString &account, const QByteArray &path, qint64 uid, const QByteArray &raw);
     QByteArray body(const QString &account, const QByteArray &path, qint64 uid) const;
+    // The newest `limit` of a folder whose text isn't kept yet, of at most `maxSize` bytes.
+    QList<qint64> withoutBody(const QString &account, const QByteArray &path, int limit, qint64 maxSize) const;
 
     void removeAccount(const QString &account);
 

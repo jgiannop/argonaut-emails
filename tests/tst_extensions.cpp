@@ -194,6 +194,7 @@ for line in sys.stdin:
         MailStore store(QDir::homePath() + QStringLiteral("/week.sqlite"));
         Sync sync(account, &store);
         sync.setSettings(settingsFor(server));
+        sync.setPrefetch(0); // the texts are fetched for the extension (Sync::fetchBodies), not before
         sync.start();
         QTRY_VERIFY_WITH_TIMEOUT(!sync.isBusy(), 10000);
         QCOMPARE(store.messages(account.id, "INBOX").size(), 4);
